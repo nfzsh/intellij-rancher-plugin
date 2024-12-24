@@ -21,7 +21,7 @@ class MyToolWindowFactory : ToolWindowFactory {
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         val myToolWindow = MyToolWindow(toolWindow)
-        val content = ContentFactory.getInstance().createContent(myToolWindow.getContent(), null, false)
+        val content = ContentFactory.getInstance().createContent(myToolWindow.getContent(project), null, false)
         toolWindow.contentManager.addContent(content)
     }
 
@@ -30,14 +30,18 @@ class MyToolWindowFactory : ToolWindowFactory {
     class MyToolWindow(toolWindow: ToolWindow) {
 
         private val service = toolWindow.project.service<MyProjectService>()
-
-        fun getContent() = JBPanel<JBPanel<*>>().apply {
+        fun getContent(project: Project) = JBPanel<JBPanel<*>>().apply {
             val label = JBLabel(MyBundle.message("randomLabel", "?"))
 
             add(label)
             add(JButton(MyBundle.message("shuffle")).apply {
                 addActionListener {
                     label.text = MyBundle.message("randomLabel", service.getRandomNumber())
+                }
+            })
+            add(JButton(MyBundle.message("deployment")).apply {
+                addActionListener {
+                    label.text = MyBundle.message("randomLabel", service.getDeployment(project))
                 }
             })
         }

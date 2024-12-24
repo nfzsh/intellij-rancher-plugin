@@ -14,4 +14,18 @@ class MyProjectService(project: Project) {
     }
 
     fun getRandomNumber() = (1..100).random()
+
+    fun getDeployment(project: Project): String {
+        val service = RancherInfoService(project)
+        val deployments = service.getDeployments()
+        val ws = service.getLogs()
+        Thread.sleep(1000)
+        ws.close(1000, null)
+        deployments.forEach {
+            if (it == project.name) {
+                return it
+            }
+        }
+        return ""
+    }
 }

@@ -1,7 +1,7 @@
 <!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
     <id>com.github.nfzsh.intellijrancherplugin</id>
-    <name>intellij-rancher-plugin</name>
+    <name>RANCHER_API_PLUGIN</name>
     <vendor>nfzsh</vendor>
 
     <depends>com.intellij.modules.platform</depends>
@@ -10,6 +10,25 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow factoryClass="com.github.nfzsh.intellijrancherplugin.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
+    </extensions>
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="Log Window"
+                    anchor="bottom"
+                    factoryClass="com.github.nfzsh.intellijrancherplugin.toolWindow.LogWindowFactory"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationConfigurable
+                id="com.example.GlobalSettings"
+                displayName="Global Settings"
+                instance="com.github.nfzsh.intellijrancherplugin.settings.GlobalSettingsConfigurable"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <projectConfigurable
+                id="com.example.ProjectSettings"
+                displayName="Project Settings"
+                instance="com.github.nfzsh.intellijrancherplugin.settings.ProjectSettingsConfigurable"/>
     </extensions>
 
     <applicationListeners>
