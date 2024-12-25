@@ -128,7 +128,6 @@ class RancherInfoService(private val project: Project) {
     }
 
     private fun getPodNames(): MutableList<String> {
-//        /k8s/clusters/{clusterId}/apis/apps/v1/namespaces/{namespace}/deployments/{deploymentName}
         val basicInfo = basicInfo.first()
         val list: Any? = getData("/v3/project/${basicInfo.second}/pods")
         val pods = mutableListOf<String>()

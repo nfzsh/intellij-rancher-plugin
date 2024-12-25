@@ -5,7 +5,7 @@
     <vendor>nfzsh</vendor>
 
     <depends>com.intellij.modules.platform</depends>
-
+    <depends>GrepConsole</depends>
     <resource-bundle>messages.MyBundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">

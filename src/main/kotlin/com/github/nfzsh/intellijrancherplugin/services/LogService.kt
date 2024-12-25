@@ -15,6 +15,13 @@ object LogService {
     }
 
     fun log(message: String) {
-        logPanel?.appendLog(message)
+//        val filterProvider : MyConsoleFilterProvider
+//        val grepService: GrepConsoleData = project.getService(GrepConsoleService::class.java)
+//        if (grepService != null) {
+//            // 使用服务获取高亮规则或其他配置
+//            val rules: List<HighlightRule> = grepService.getHighlightRules()
+//        }
+        if(message.isEmpty()) return
+        logPanel?.appendLog(message.split("\n").filter { it.isNotEmpty() })
     }
 }
