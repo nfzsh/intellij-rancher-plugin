@@ -31,17 +31,17 @@ class MyToolWindowFactory : ToolWindowFactory {
 
         private val service = toolWindow.project.service<MyProjectService>()
         fun getContent(project: Project) = JBPanel<JBPanel<*>>().apply {
-            val label = JBLabel(MyBundle.message("randomLabel", "?"))
-
+            val label = JBLabel(MyBundle.message("randomLabel", project.name))
             add(label)
-            add(JButton(MyBundle.message("shuffle")).apply {
+            val button = JButton(MyBundle.message("start"))
+            add(button.apply {
                 addActionListener {
-                    label.text = MyBundle.message("randomLabel", service.getRandomNumber())
-                }
-            })
-            add(JButton(MyBundle.message("deployment")).apply {
-                addActionListener {
+                    button.setEnabled(false)
+                    button.text = MyBundle.message("loading")
                     label.text = MyBundle.message("randomLabel", service.getDeployment(project))
+                    button.setEnabled(true)
+                    button.text = if (project.getService(MyProjectService::class.java).isRunning)
+                        MyBundle.message("stop") else MyBundle.message("start")
                 }
             })
         }

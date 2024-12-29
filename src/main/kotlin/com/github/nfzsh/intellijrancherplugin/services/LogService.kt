@@ -1,27 +1,30 @@
 package com.github.nfzsh.intellijrancherplugin.services
 
-import com.github.nfzsh.intellijrancherplugin.models.LogPanel
+import com.intellij.execution.filters.TextConsoleBuilderFactory
+import com.intellij.execution.ui.ConsoleView
+import com.intellij.execution.ui.ConsoleViewContentType
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.project.Project
 
 /**
  *
  * @author 祝世豪
  * @since 2024/12/23 19:07
  */
-object LogService {
-    private var logPanel: LogPanel? = null
+@Service(Service.Level.PROJECT)
+class LogService(private val project: Project) {
+    private var consoleView: ConsoleView? = null
 
-    fun setLogPanel(panel: LogPanel) {
-        logPanel = panel
+    fun getOrCreateConsoleView(): ConsoleView {
+        if (consoleView == null) {
+            consoleView = TextConsoleBuilderFactory.getInstance().createBuilder(project).console
+        }
+        return consoleView!!
     }
-
     fun log(message: String) {
-//        val filterProvider : MyConsoleFilterProvider
-//        val grepService: GrepConsoleData = project.getService(GrepConsoleService::class.java)
-//        if (grepService != null) {
-//            // 使用服务获取高亮规则或其他配置
-//            val rules: List<HighlightRule> = grepService.getHighlightRules()
-//        }
-        if(message.isEmpty()) return
-        logPanel?.appendLog(message.split("\n").filter { it.isNotEmpty() })
+        if (message.isEmpty()) return
+        val consoleView = getOrCreateConsoleView()
+        consoleView.print(message, ConsoleViewContentType.NORMAL_OUTPUT)
+
     }
 }

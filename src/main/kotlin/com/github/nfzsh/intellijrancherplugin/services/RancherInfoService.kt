@@ -93,9 +93,7 @@ class RancherInfoService(private val project: Project) {
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-                val decoded = bytes.utf8()
-//                println("Received binary message: $decoded")
-                LogService.log(decoded)
+                project.getService(LogService::class.java).log(bytes.utf8())
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
@@ -105,6 +103,7 @@ class RancherInfoService(private val project: Project) {
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 println("Error: ${t.message}")
+
             }
         }
         val webSocket = client.newWebSocket(request, listener)

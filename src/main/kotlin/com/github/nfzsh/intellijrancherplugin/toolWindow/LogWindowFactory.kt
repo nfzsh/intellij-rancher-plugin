@@ -1,28 +1,23 @@
 package com.github.nfzsh.intellijrancherplugin.toolWindow
 
-import com.github.nfzsh.intellijrancherplugin.models.LogPanel
 import com.github.nfzsh.intellijrancherplugin.services.LogService
-import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
+import com.intellij.ui.content.ContentFactory
 
 /**
  *
  * @author 祝世豪
  * @since 2024/12/23 19:04
  */
-class LogWindowFactory : ToolWindowFactory, DumbAware {
-
+class LogWindowFactory : ToolWindowFactory {
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
-        val contentManager = toolWindow.contentManager
+        val logService = project.getService(LogService::class.java)
+        val consoleView = logService.getOrCreateConsoleView()
 
-        // 创建日志窗口面板
-        val logPanel = LogPanel()
-        LogService.setLogPanel(logPanel)
-        val content = contentManager.factory.createContent(logPanel.panel, "Logs", false)
-
-        // 添加到工具窗口
-        contentManager.addContent(content)
+        val contentFactory = ContentFactory.getInstance()
+        val content = contentFactory.createContent(consoleView.component, "Remote Logs", false)
+        toolWindow.contentManager.addContent(content)
     }
 }
