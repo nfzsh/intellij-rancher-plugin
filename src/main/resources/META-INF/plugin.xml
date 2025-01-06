@@ -5,18 +5,16 @@
     <vendor>nfzsh</vendor>
 
     <depends>com.intellij.modules.platform</depends>
-    <depends>GrepConsole</depends>
     <resource-bundle>messages.MyBundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow factoryClass="com.github.nfzsh.intellijrancherplugin.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
     </extensions>
     <extensions defaultExtensionNs="com.intellij">
-        <toolWindow id="Remote Logs"
+        <toolWindow id="Remote"
                     factoryClass="com.github.nfzsh.intellijrancherplugin.toolWindow.LogWindowFactory"
                     anchor="bottom" />
     </extensions>
-
     <extensions defaultExtensionNs="com.intellij">
         <applicationConfigurable
                 id="com.example.GlobalSettings"
