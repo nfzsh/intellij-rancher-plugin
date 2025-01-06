@@ -2,7 +2,11 @@ package com.github.nfzsh.intellijrancherplugin.services
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.nfzsh.intellijrancherplugin.settings.Settings
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
+import com.intellij.terminal.JBTerminalWidget
+import com.intellij.ui.content.Content
+import com.intellij.ui.content.ContentManager
 import com.jediterm.core.util.TermSize
 import com.jediterm.terminal.TtyConnector
 import okhttp3.*
@@ -115,12 +119,13 @@ class RancherInfoService(private val project: Project) {
         return webSocket
     }
 
-    fun createWebSocketTtyConnector(): TtyConnector {
+    fun createWebSocketTtyConnector(terminalWidget: JBTerminalWidget, contentManager: ContentManager, content: Content): TtyConnector {
         var isConnected = false
         val setting = getSetting()
         val basicInfo = basicInfo.first()
         val podNames = getPodNames()
-        val webSocketUrl = "wss://${setting.first}/k8s/clusters/${basicInfo.first}/api/v1/namespaces/${basicInfo.third}/pods/${podNames[0]}/exec?container=sds-common-center&stdout=1&stdin=1&stderr=1&tty=1&command=%2Fbin%2Fsh&command=-c&command=TERM%3Dxterm-256color%3B%20export%20TERM%3B%20%5B%20-x%20%2Fbin%2Fbash%20%5D%20%26%26%20(%5B%20-x%20%2Fusr%2Fbin%2Fscript%20%5D%20%26%26%20%2Fusr%2Fbin%2Fscript%20-q%20-c%20%22%2Fbin%2Fbash%22%20%2Fdev%2Fnull%20%7C%7C%20exec%20%2Fbin%2Fbash)%20%7C%7C%20exec%20%2Fbin%2Fsh"
+        val webSocketUrl =
+            "wss://${setting.first}/k8s/clusters/${basicInfo.first}/api/v1/namespaces/${basicInfo.third}/pods/${podNames[0]}/exec?container=sds-common-center&stdout=1&stdin=1&stderr=1&tty=1&command=%2Fbin%2Fsh&command=-c&command=TERM%3Dxterm-256color%3B%20export%20TERM%3B%20%5B%20-x%20%2Fbin%2Fbash%20%5D%20%26%26%20(%5B%20-x%20%2Fusr%2Fbin%2Fscript%20%5D%20%26%26%20%2Fusr%2Fbin%2Fscript%20-q%20-c%20%22%2Fbin%2Fbash%22%20%2Fdev%2Fnull%20%7C%7C%20exec%20%2Fbin%2Fbash)%20%7C%7C%20exec%20%2Fbin%2Fsh"
         val client = createUnsafeOkHttpClient()
         val request = Request.Builder()
             .url(webSocketUrl)
@@ -158,11 +163,16 @@ class RancherInfoService(private val project: Project) {
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 isConnected = false
+                ApplicationManager.getApplication().invokeLater {
+                    terminalWidget.close()
+                    contentManager.removeContent(content, true) // true 表示销毁资源
+                }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 outputPipe.write(("Error: ${t.message}\n").toByteArray())
                 isConnected = false
+                terminalWidget.close()
             }
         })
 
@@ -176,6 +186,7 @@ class RancherInfoService(private val project: Project) {
                 }
                 return bytesRead
             }
+
             override fun resize(terminalSize: TermSize) {
                 // 远程服务器需要调整终端大小，可以在这里发送相关命令
                 // {"Width":163,"Height":25}
@@ -184,6 +195,7 @@ class RancherInfoService(private val project: Project) {
                 val message = "4$base64Data" // '4' 表示 resize 事件通道
                 webSocket.send(message)
             }
+
             override fun write(bytes: ByteArray?) {
                 val base64Data = Base64.getEncoder().encodeToString(bytes)
                 val message = "0$base64Data" // '0' 表示 stdin 通道
@@ -238,11 +250,11 @@ class RancherInfoService(private val project: Project) {
         val basicInfo = basicInfo.first()
         val list: Any? = getData("/v3/project/${basicInfo.second}/pods")
         val pods = mutableListOf<String>()
-        if(list is List<*>) {
+        if (list is List<*>) {
             list.forEach { item ->
                 if (item is Map<*, *>) {
                     val workloadId = item["workloadId"]
-                    if(workloadId == "deployment:${basicInfo.third}:${project.name}" && item["type"] == "pod" && item["state"] == "running") {
+                    if (workloadId == "deployment:${basicInfo.third}:${project.name}" && item["type"] == "pod" && item["state"] == "running") {
                         pods.add(item["name"].toString())
                     }
                 }

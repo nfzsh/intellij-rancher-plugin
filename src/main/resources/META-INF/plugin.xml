@@ -9,8 +9,6 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow factoryClass="com.github.nfzsh.intellijrancherplugin.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
-    </extensions>
-    <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="Remote"
                     factoryClass="com.github.nfzsh.intellijrancherplugin.toolWindow.LogWindowFactory"
                     anchor="bottom" />
