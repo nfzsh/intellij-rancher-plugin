@@ -70,6 +70,14 @@ class MyToolWindowFactory : ToolWindowFactory {
                     remoteToolWindow?.contentManager?.setSelectedContent(shellContent)
                 }
             })
+
+            val deploy = JButton(MyBundle.message("redeploy"))
+            add(deploy.apply {
+                addActionListener {
+                    val rancherInfoService = project.getService(RancherInfoService::class.java)
+                    val success = rancherInfoService.redeploy(project.name)
+                }
+            })
         }
     }
 }

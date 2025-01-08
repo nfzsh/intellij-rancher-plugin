@@ -3,6 +3,7 @@ package com.github.nfzsh.intellijrancherplugin.services
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.nfzsh.intellijrancherplugin.settings.Settings
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import com.intellij.terminal.JBTerminalWidget
 import com.intellij.ui.content.Content
@@ -25,6 +26,7 @@ import javax.net.ssl.X509TrustManager
  * @author 祝世豪
  * @since 2024/12/24 17:16
  */
+@Service(Service.Level.PROJECT)
 class RancherInfoService(private val project: Project) {
 
     /**
@@ -79,6 +81,19 @@ class RancherInfoService(private val project: Project) {
         return nameList
     }
 
+    fun redeploy(deploymentName: String): Boolean {
+        val setting = getSetting()
+        val basicInfo = basicInfo.first()
+        val client = createUnsafeOkHttpClient()
+        val request = Request.Builder()
+            .url("https://${setting.first}v3/project/${basicInfo.second}/workloads/deployment:${basicInfo.third}:${deploymentName}?action=redeploy")
+            .header("Authorization", setting.second)
+            .post(RequestBody.create(null, ""))
+            .build()
+        val response = client.newCall(request).execute()
+        return response.code == 200
+    }
+
     fun getLogs(): WebSocket {
         val client = createUnsafeOkHttpClient()
         val setting = getSetting()
@@ -119,7 +134,11 @@ class RancherInfoService(private val project: Project) {
         return webSocket
     }
 
-    fun createWebSocketTtyConnector(terminalWidget: JBTerminalWidget, contentManager: ContentManager, content: Content): TtyConnector {
+    fun createWebSocketTtyConnector(
+        terminalWidget: JBTerminalWidget,
+        contentManager: ContentManager,
+        content: Content
+    ): TtyConnector {
         var isConnected = false
         val setting = getSetting()
         val basicInfo = basicInfo.first()

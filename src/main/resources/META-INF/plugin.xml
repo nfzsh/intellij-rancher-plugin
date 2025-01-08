@@ -6,13 +6,9 @@
 
     <depends>com.intellij.modules.platform</depends>
     <resource-bundle>messages.MyBundle</resource-bundle>
-
-    <extensions defaultExtensionNs="com.intellij">
-        <toolWindow factoryClass="com.github.nfzsh.intellijrancherplugin.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
-        <toolWindow id="Remote"
-                    factoryClass="com.github.nfzsh.intellijrancherplugin.toolWindow.LogWindowFactory"
-                    anchor="bottom" />
-    </extensions>
+    <applicationListeners>
+        <listener class="com.github.nfzsh.intellijrancherplugin.listeners.MyApplicationActivationListener" topic="com.intellij.openapi.application.ApplicationActivationListener"/>
+    </applicationListeners>
     <extensions defaultExtensionNs="com.intellij">
         <applicationConfigurable
                 id="com.example.GlobalSettings"
@@ -27,7 +23,10 @@
                 instance="com.github.nfzsh.intellijrancherplugin.settings.ProjectSettingsConfigurable"/>
     </extensions>
 
-    <applicationListeners>
-        <listener class="com.github.nfzsh.intellijrancherplugin.listeners.MyApplicationActivationListener" topic="com.intellij.openapi.application.ApplicationActivationListener"/>
-    </applicationListeners>
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow factoryClass="com.github.nfzsh.intellijrancherplugin.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
+        <toolWindow id="Remote"
+                    factoryClass="com.github.nfzsh.intellijrancherplugin.toolWindow.LogWindowFactory"
+                    anchor="bottom" />
+    </extensions>
 </idea-plugin>
