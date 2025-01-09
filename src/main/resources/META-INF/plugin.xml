@@ -9,18 +9,12 @@
     <applicationListeners>
         <listener class="com.github.nfzsh.intellijrancherplugin.listeners.MyApplicationActivationListener" topic="com.intellij.openapi.application.ApplicationActivationListener"/>
     </applicationListeners>
-    <extensions defaultExtensionNs="com.intellij">
-        <applicationConfigurable
-                id="com.example.GlobalSettings"
-                displayName="Global Settings"
-                instance="com.github.nfzsh.intellijrancherplugin.settings.GlobalSettingsConfigurable"/>
-    </extensions>
 
     <extensions defaultExtensionNs="com.intellij">
         <projectConfigurable
                 id="com.example.ProjectSettings"
-                displayName="Project Settings"
-                instance="com.github.nfzsh.intellijrancherplugin.settings.ProjectSettingsConfigurable"/>
+                displayName="Rancher Plugin Setting"
+                instance="com.github.nfzsh.intellijrancherplugin.settings.SettingsConfigurable"/>
     </extensions>
 
     <extensions defaultExtensionNs="com.intellij">

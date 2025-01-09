@@ -11,6 +11,7 @@ import com.intellij.ui.content.ContentManager
 import com.jediterm.core.util.TermSize
 import com.jediterm.terminal.TtyConnector
 import okhttp3.*
+import okhttp3.RequestBody.Companion.toRequestBody
 import okio.ByteString
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
@@ -88,7 +89,7 @@ class RancherInfoService(private val project: Project) {
         val request = Request.Builder()
             .url("https://${setting.first}v3/project/${basicInfo.second}/workloads/deployment:${basicInfo.third}:${deploymentName}?action=redeploy")
             .header("Authorization", setting.second)
-            .post(RequestBody.create(null, ""))
+            .post("".toRequestBody(null))
             .build()
         val response = client.newCall(request).execute()
         return response.code == 200
@@ -144,7 +145,7 @@ class RancherInfoService(private val project: Project) {
         val basicInfo = basicInfo.first()
         val podNames = getPodNames()
         val webSocketUrl =
-            "wss://${setting.first}/k8s/clusters/${basicInfo.first}/api/v1/namespaces/${basicInfo.third}/pods/${podNames[0]}/exec?container=sds-common-center&stdout=1&stdin=1&stderr=1&tty=1&command=%2Fbin%2Fsh&command=-c&command=TERM%3Dxterm-256color%3B%20export%20TERM%3B%20%5B%20-x%20%2Fbin%2Fbash%20%5D%20%26%26%20(%5B%20-x%20%2Fusr%2Fbin%2Fscript%20%5D%20%26%26%20%2Fusr%2Fbin%2Fscript%20-q%20-c%20%22%2Fbin%2Fbash%22%20%2Fdev%2Fnull%20%7C%7C%20exec%20%2Fbin%2Fbash)%20%7C%7C%20exec%20%2Fbin%2Fsh"
+            "wss://${setting.first}k8s/clusters/${basicInfo.first}/api/v1/namespaces/${basicInfo.third}/pods/${podNames[0]}/exec?container=${project.name}&stdout=1&stdin=1&stderr=1&tty=1&command=%2Fbin%2Fsh&command=-c&command=TERM%3Dxterm-256color%3B%20export%20TERM%3B%20%5B%20-x%20%2Fbin%2Fbash%20%5D%20%26%26%20(%5B%20-x%20%2Fusr%2Fbin%2Fscript%20%5D%20%26%26%20%2Fusr%2Fbin%2Fscript%20-q%20-c%20%22%2Fbin%2Fbash%22%20%2Fdev%2Fnull%20%7C%7C%20exec%20%2Fbin%2Fbash)%20%7C%7C%20exec%20%2Fbin%2Fsh"
         val client = createUnsafeOkHttpClient()
         val request = Request.Builder()
             .url(webSocketUrl)
@@ -154,7 +155,6 @@ class RancherInfoService(private val project: Project) {
         // 使用管道流模拟终端输入输出
         val inputPipe = PipedInputStream()
         val outputPipe = PipedOutputStream(inputPipe)
-
         val webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 isConnected = true
@@ -165,14 +165,14 @@ class RancherInfoService(private val project: Project) {
                     val channel = text[0]
                     val base64Data = text.substring(1)
                     val decodedBytes = Base64.getDecoder().decode(base64Data)
-                    val decodedString = String(decodedBytes, Charsets.UTF_8)
 
                     when (channel) {
-                        '1' -> outputPipe.write(decodedString.toByteArray()) // stdout
-                        '2' -> outputPipe.write(("Error: $decodedString\n").toByteArray()) // stderr
-                        '3' -> outputPipe.write(("Error message: $decodedString\n").toByteArray()) // error messages
-                        else -> outputPipe.write(("Unknown channel $channel: $decodedString\n").toByteArray())
+                        '1' -> outputPipe.write(decodedBytes) // stdout
+                        '2' -> outputPipe.write(("Error: $decodedBytes\n").toByteArray()) // stderr
+                        '3' -> outputPipe.write(("Error message: $decodedBytes\n").toByteArray()) // error messages
+                        else -> outputPipe.write(("Unknown channel $channel: $decodedBytes\n").toByteArray())
                     }
+                    outputPipe.flush()
                 }
             }
 
@@ -200,7 +200,7 @@ class RancherInfoService(private val project: Project) {
                 val byteBuffer = ByteArray(length)
                 val bytesRead = inputPipe.read(byteBuffer, 0, length)
                 if (bytesRead > 0) {
-                    val chars = String(byteBuffer, 0, bytesRead).toCharArray()
+                    val chars = String(byteBuffer, 0, bytesRead, Charsets.UTF_8).toCharArray()
                     System.arraycopy(chars, 0, buf, offset, chars.size)
                 }
                 return bytesRead
