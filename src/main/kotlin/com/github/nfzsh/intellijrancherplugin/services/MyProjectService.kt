@@ -17,11 +17,11 @@ class MyProjectService(project: Project) {
         thisLogger().info(MyBundle.message("projectService", project.name))
     }
 
-    fun getDeployment(project: Project): String {
+    fun getDeployment(project: Project, basicInfo : Triple<String, String, String>, deploymentName: String, podName: String): String {
         val service = RancherInfoService(project)
 //        val deployments = service.getDeployments()
         if(ws == null) {
-            ws = service.getLogs()
+            ws = service.getLogs(basicInfo, deploymentName, podName)
             isRunning = true
 
         } else {

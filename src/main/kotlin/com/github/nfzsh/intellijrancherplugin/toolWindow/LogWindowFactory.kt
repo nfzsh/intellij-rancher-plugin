@@ -18,17 +18,5 @@ class LogWindowFactory : ToolWindowFactory {
         val contentFactory = ContentFactory.getInstance()
         val logContent = contentFactory.createContent(consoleView.component, "Remote Logs", false)
         toolWindow.contentManager.addContent(logContent)
-//        // 创建 JetBrains Terminal
-//        val terminalSettingsProvider = JBTerminalSystemSettingsProviderBase()
-//        // 创建一个 Disposable 对象
-//        val parentDisposable = Disposer.newDisposable("WebSocketShellTerminal")
-//        val terminalWidget = JBTerminalWidget(project, terminalSettingsProvider, parentDisposable)
-//
-//        // 初始化 WebSocket 并连接
-//        val connector = RancherInfoService(project).createWebSocketTtyConnector()
-//        terminalWidget.createTerminalSession(connector)
-//        terminalWidget.start(connector)
-//        val shellContent = contentFactory.createContent(terminalWidget.component, "Remote Shell", false)
-//        toolWindow.contentManager.addContent(shellContent)
     }
 }

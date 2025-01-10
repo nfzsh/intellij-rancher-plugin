@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.nfzsh.intellijrancherplugin.settings.Settings
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
 import com.intellij.terminal.JBTerminalWidget
 import com.intellij.ui.content.Content
@@ -17,6 +18,7 @@ import java.io.PipedInputStream
 import java.io.PipedOutputStream
 import java.security.KeyManagementException
 import java.security.NoSuchAlgorithmException
+import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 import java.util.*
 import javax.net.ssl.SSLContext
@@ -34,7 +36,7 @@ class RancherInfoService(private val project: Project) {
      * 集群信息
      * @return cluster, project, namespace
      */
-    private val basicInfo: MutableList<Triple<String, String, String>>
+    val basicInfo: MutableList<Triple<String, String, String>>
 
     init {
         basicInfo = getInfo()
@@ -58,12 +60,8 @@ class RancherInfoService(private val project: Project) {
         return info
     }
 
-    fun getDeployments(): MutableList<String> {
-        if (basicInfo.isEmpty()) {
-            return mutableListOf()
-        }
-        val info = basicInfo[0]
-        val list: Any? = getData("/v3/project/${info.second}/deployments")
+    fun getDeployments(project : String): MutableList<String> {
+        val list: Any? = getData("/v3/project/${project}/deployments")
         val nameList = mutableListOf<String>()
         if (list is List<*>) {
             list.forEach { item ->
@@ -82,9 +80,8 @@ class RancherInfoService(private val project: Project) {
         return nameList
     }
 
-    fun redeploy(deploymentName: String): Boolean {
+    fun redeploy(deploymentName: String, basicInfo : Triple<String, String, String>): Boolean {
         val setting = getSetting()
-        val basicInfo = basicInfo.first()
         val client = createUnsafeOkHttpClient()
         val request = Request.Builder()
             .url("https://${setting.first}v3/project/${basicInfo.second}/workloads/deployment:${basicInfo.third}:${deploymentName}?action=redeploy")
@@ -95,16 +92,11 @@ class RancherInfoService(private val project: Project) {
         return response.code == 200
     }
 
-    fun getLogs(): WebSocket {
+    fun getLogs(basicInfo : Triple<String, String, String>, deploymentName: String, podName: String): WebSocket {
         val client = createUnsafeOkHttpClient()
         val setting = getSetting()
-        val basicInfo = basicInfo.first()
-        val podNames = getPodNames()
-        if (podNames.isEmpty()) {
-            throw IllegalArgumentException("No pods found")
-        }
         val request = Request.Builder()
-            .url("wss://${setting.first}/k8s/clusters/${basicInfo.first}/api/v1/namespaces/${basicInfo.third}/pods/${podNames[0]}/log?previous=false&follow=true&timestamps=false&pretty=true&container=${project.name}&sinceSeconds=100&sockId=5")
+            .url("wss://${setting.first}k8s/clusters/${basicInfo.first}/api/v1/namespaces/${basicInfo.third}/pods/${podName}/log?previous=false&follow=true&timestamps=false&pretty=true&container=${deploymentName}&sinceSeconds=100&sockId=5")
             .header("Authorization", setting.second)
             .build()
 
@@ -138,14 +130,15 @@ class RancherInfoService(private val project: Project) {
     fun createWebSocketTtyConnector(
         terminalWidget: JBTerminalWidget,
         contentManager: ContentManager,
-        content: Content
+        content: Content,
+        basicInfo : Triple<String, String, String>,
+        deploymentName: String,
+        podName: String
     ): TtyConnector {
         var isConnected = false
         val setting = getSetting()
-        val basicInfo = basicInfo.first()
-        val podNames = getPodNames()
         val webSocketUrl =
-            "wss://${setting.first}k8s/clusters/${basicInfo.first}/api/v1/namespaces/${basicInfo.third}/pods/${podNames[0]}/exec?container=${project.name}&stdout=1&stdin=1&stderr=1&tty=1&command=%2Fbin%2Fsh&command=-c&command=TERM%3Dxterm-256color%3B%20export%20TERM%3B%20%5B%20-x%20%2Fbin%2Fbash%20%5D%20%26%26%20(%5B%20-x%20%2Fusr%2Fbin%2Fscript%20%5D%20%26%26%20%2Fusr%2Fbin%2Fscript%20-q%20-c%20%22%2Fbin%2Fbash%22%20%2Fdev%2Fnull%20%7C%7C%20exec%20%2Fbin%2Fbash)%20%7C%7C%20exec%20%2Fbin%2Fsh"
+            "wss://${setting.first}k8s/clusters/${basicInfo.first}/api/v1/namespaces/${basicInfo.third}/pods/${podName}/exec?container=${deploymentName}&stdout=1&stdin=1&stderr=1&tty=1&command=%2Fbin%2Fsh&command=-c&command=TERM%3Dxterm-256color%3B%20export%20TERM%3B%20%5B%20-x%20%2Fbin%2Fbash%20%5D%20%26%26%20(%5B%20-x%20%2Fusr%2Fbin%2Fscript%20%5D%20%26%26%20%2Fusr%2Fbin%2Fscript%20-q%20-c%20%22%2Fbin%2Fbash%22%20%2Fdev%2Fnull%20%7C%7C%20exec%20%2Fbin%2Fbash)%20%7C%7C%20exec%20%2Fbin%2Fsh"
         val client = createUnsafeOkHttpClient()
         val request = Request.Builder()
             .url(webSocketUrl)
@@ -189,9 +182,15 @@ class RancherInfoService(private val project: Project) {
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                outputPipe.write(("Error: ${t.message}\n").toByteArray())
+                t.message?.toByteArray()?.let { outputPipe.write(it) }
+                outputPipe.flush()
+                thisLogger().warn("Error: ${t.message}")
+                Thread.sleep(2000)
                 isConnected = false
-                terminalWidget.close()
+                ApplicationManager.getApplication().invokeLater {
+                    terminalWidget.close()
+                    contentManager.removeContent(content, true) // true 表示销毁资源
+                }
             }
         })
 
@@ -265,15 +264,14 @@ class RancherInfoService(private val project: Project) {
         return namespaces
     }
 
-    private fun getPodNames(): MutableList<String> {
-        val basicInfo = basicInfo.first()
+    fun getPodNames(basicInfo : Triple<String, String, String>, name : String): MutableList<String> {
         val list: Any? = getData("/v3/project/${basicInfo.second}/pods")
         val pods = mutableListOf<String>()
         if (list is List<*>) {
             list.forEach { item ->
                 if (item is Map<*, *>) {
                     val workloadId = item["workloadId"]
-                    if (workloadId == "deployment:${basicInfo.third}:${project.name}" && item["type"] == "pod" && item["state"] == "running") {
+                    if (workloadId == "deployment:${basicInfo.third}:${name}" && item["type"] == "pod" && item["state"] == "running") {
                         pods.add(item["name"].toString())
                     }
                 }
@@ -324,11 +322,11 @@ class RancherInfoService(private val project: Project) {
 
     private fun createUnsafeOkHttpClient(): OkHttpClient {
         val trustAllCertificates = object : X509TrustManager {
-            @Throws(java.security.cert.CertificateException::class)
+            @Throws(CertificateException::class)
             override fun checkClientTrusted(chain: Array<X509Certificate>?, authType: String?) {
             }
 
-            @Throws(java.security.cert.CertificateException::class)
+            @Throws(CertificateException::class)
             override fun checkServerTrusted(chain: Array<X509Certificate>?, authType: String?) {
             }
 
