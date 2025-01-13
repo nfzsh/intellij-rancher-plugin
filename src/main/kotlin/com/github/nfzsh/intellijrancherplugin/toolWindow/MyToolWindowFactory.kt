@@ -13,8 +13,6 @@ import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.terminal.JBTerminalSystemSettingsProviderBase
 import com.intellij.terminal.JBTerminalWidget
-import com.intellij.ui.AnimatedIcon
-import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.treeStructure.Tree
@@ -42,90 +40,167 @@ class MyToolWindowFactory : ToolWindowFactory {
     private val redeployButton = JButton("Redeploy")
     private val remoteLogButton = JButton("Remote Log")
     private val remoteShellButton = JButton("Remote Shell")
+    private val refreshCancelButton = JButton("Refresh")
     private var rancherInfoService: RancherInfoService? = null
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
-        // 创建一个占位符面板，用于快速显示窗口
-        val placeholderPanel = JPanel(BorderLayout()).apply {
-            add(JBLabel("Loading...", SwingConstants.CENTER), BorderLayout.CENTER) // 显示加载提示
-        }
-        val loadingLabel = JLabel("Loading...", AnimatedIcon.Default(), SwingConstants.CENTER)
-        placeholderPanel.add(loadingLabel, BorderLayout.CENTER)
+        rancherInfoService = RancherInfoService(project)
 
-        // 将占位符面板添加到 ToolWindow 内容
-        val content = ContentFactory.getInstance().createContent(placeholderPanel, null, false)
+        // 创建主面板，使用 BorderLayout
+        val mainPanel = JPanel(BorderLayout())
+
+        // 创建占位符内容区域，用于显示加载提示或实际内容
+        val contentPanel = JPanel(BorderLayout()).apply {
+            add(JLabel("Loading...", SwingConstants.CENTER), BorderLayout.CENTER) // 初始显示加载提示
+        }
+
+        // 创建刷新/取消按钮
+        refreshCancelButton.apply {
+            icon = AllIcons.Actions.Refresh
+            toolTipText = "Reload content"
+            isEnabled = false // 初始状态为禁用
+        }
+
+        // 创建其他按钮（初始状态为隐藏）
+        redeployButton.apply {
+            icon = AllIcons.Actions.Refresh
+            toolTipText = "Redeploy the selected service"
+            isVisible = false // 初始状态为隐藏
+            isEnabled = false
+            addActionListener { handleRedeploy() }
+        }
+
+        remoteLogButton.apply {
+            icon = AllIcons.Actions.ShowAsTree
+            toolTipText = "View remote logs"
+            isVisible = false // 初始状态为隐藏
+            isEnabled = false
+            addActionListener { handleRemoteLog(project) }
+        }
+
+        remoteShellButton.apply {
+            icon = AllIcons.Actions.Execute
+            toolTipText = "Open remote shell"
+            isVisible = false // 初始状态为隐藏
+            isEnabled = false
+            addActionListener { handleRemoteShell(project) }
+        }
+
+        // 创建按钮区域
+        val buttonPanel = JPanel(FlowLayout(FlowLayout.LEFT, 10, 10)).apply {
+            border = BorderFactory.createEmptyBorder(10, 10, 10, 10)
+            background = UIUtil.getPanelBackground()
+            add(refreshCancelButton) // 添加刷新/取消按钮
+            add(redeployButton)      // 添加 Redeploy 按钮（初始隐藏）
+            add(remoteLogButton)     // 添加 Remote Log 按钮（初始隐藏）
+            add(remoteShellButton)   // 添加 Remote Shell 按钮（初始隐藏）
+        }
+
+        // 将内容区域和按钮区域添加到主面板
+        mainPanel.add(contentPanel, BorderLayout.CENTER) // 内容区域放在中间
+        mainPanel.add(buttonPanel, BorderLayout.SOUTH)   // 按钮区域放在底部
+
+        // 将主面板添加到 ToolWindow 内容
+        val content = ContentFactory.getInstance().createContent(mainPanel, null, false)
         toolWindow.contentManager.addContent(content)
+
+        // 初始加载内容
+        reloadContent(contentPanel, project, refreshCancelButton, redeployButton, remoteLogButton, remoteShellButton)
+    }
+
+    /**
+     * 异步加载内容并更新 UI
+     */
+    private fun reloadContent(
+        contentPanel: JPanel,
+        project: Project,
+        refreshCancelButton: JButton,
+        redeployButton: JButton,
+        remoteLogButton: JButton,
+        remoteShellButton: JButton
+    ) {
+        // 显示加载提示
+        contentPanel.removeAll()
+        contentPanel.add(JLabel("Loading...", SwingConstants.CENTER), BorderLayout.CENTER)
+        contentPanel.revalidate()
+        contentPanel.repaint()
+
+        // 更新刷新/取消按钮状态
+        refreshCancelButton.text = "Cancel"
+        refreshCancelButton.icon = AllIcons.Actions.Cancel
+        refreshCancelButton.toolTipText = "Cancel loading"
+        refreshCancelButton.isEnabled = true
+
+        // 隐藏其他按钮
+        redeployButton.isVisible = false
+        remoteLogButton.isVisible = false
+        remoteShellButton.isVisible = false
+
         // 使用 SwingWorker 异步加载内容
         val worker = object : SwingWorker<JPanel, Void>() {
             override fun doInBackground(): JPanel {
-                rancherInfoService = RancherInfoService(project)
+                // 在后台加载耗时内容
                 val mainPanel = JPanel(BorderLayout())
+
+                // 模拟耗时操作
+                Thread.sleep(3000) // 模拟加载耗时 3 秒
+
                 // 创建树状结构
                 val tree = createTree()
                 val scrollPane = JBScrollPane(tree).apply {
                     border = BorderFactory.createEmptyBorder(10, 10, 10, 10)
                 }
                 mainPanel.add(scrollPane, BorderLayout.CENTER)
-                // 创建按钮区域
-                val buttonPanel = JPanel(FlowLayout(FlowLayout.LEFT)).apply {
-                    border = BorderFactory.createEmptyBorder(10, 10, 10, 10)
-                    background = UIUtil.getPanelBackground()
-                }
 
-                // 创建按钮
-                redeployButton.apply {
-                    icon = AllIcons.Actions.Refresh
-                    isEnabled = false
-                    toolTipText = "Redeploy the selected service"
-                    addActionListener { handleRedeploy() }
-                }
-
-                remoteLogButton.apply {
-                    icon = AllIcons.Actions.ShowAsTree
-                    toolTipText = "View remote logs"
-                    isEnabled = false
-                    addActionListener { handleRemoteLog(project) }
-                }
-
-                remoteShellButton.apply {
-                    icon = AllIcons.Debugger.Console
-                    toolTipText = "Open remote shell"
-                    isEnabled = false
-                    addActionListener { handleRemoteShell(project) }
-                }
-
-                // 添加按钮到按钮区域
-                buttonPanel.add(redeployButton)
-                buttonPanel.add(remoteLogButton)
-                buttonPanel.add(remoteShellButton)
-
-                // 将按钮区域放在底部
-                mainPanel.add(buttonPanel, BorderLayout.SOUTH)
                 return mainPanel
             }
+
             override fun done() {
                 try {
-                    // 加载完成后，替换占位符面板为实际内容
-                    val mainPanel = get() // 获取 doInBackground 的返回值
-                    placeholderPanel.removeAll()
-                    placeholderPanel.add(mainPanel, BorderLayout.CENTER)
-                    placeholderPanel.revalidate()
-                    placeholderPanel.repaint()
+                    if (isCancelled) {
+                        // 如果任务被取消，显示取消状态
+                        contentPanel.removeAll()
+                        contentPanel.add(JLabel("Loading cancelled.", SwingConstants.CENTER), BorderLayout.CENTER)
+                    } else {
+                        // 加载完成后，替换占位符面板为实际内容
+                        val mainPanel = get() // 获取 doInBackground 的返回值
+                        contentPanel.removeAll()
+                        contentPanel.add(mainPanel, BorderLayout.CENTER)
+
+                        // 显示其他按钮
+                        redeployButton.isVisible = true
+                        remoteLogButton.isVisible = true
+                        remoteShellButton.isVisible = true
+                    }
                 } catch (e: Exception) {
                     // 处理异常
-                    placeholderPanel.removeAll()
-                    placeholderPanel.add(JLabel("Failed to load content.", SwingConstants.CENTER), BorderLayout.CENTER)
-                    placeholderPanel.revalidate()
-                    placeholderPanel.repaint()
+                    contentPanel.removeAll()
+                    contentPanel.add(JLabel("Failed to load content.", SwingConstants.CENTER), BorderLayout.CENTER)
+                } finally {
+                    // 无论成功、取消还是失败，都恢复刷新按钮状态
+                    refreshCancelButton.text = "Refresh"
+                    refreshCancelButton.icon = AllIcons.Actions.Refresh
+                    refreshCancelButton.toolTipText = "Reload content"
+                    refreshCancelButton.isEnabled = true
                 }
+                contentPanel.revalidate()
+                contentPanel.repaint()
             }
         }
+
+        // 设置刷新/取消按钮的点击事件
+        refreshCancelButton.addActionListener {
+            if (refreshCancelButton.text == "Cancel") {
+                // 如果当前是取消按钮，则取消任务
+                worker.cancel(true)
+            } else {
+                // 如果当前是刷新按钮，则重新加载内容
+                reloadContent(contentPanel, project, refreshCancelButton, redeployButton, remoteLogButton, remoteShellButton)
+            }
+        }
+
         // 启动异步任务
         worker.execute()
-        val cancelButton = JButton("Cancel").apply {
-            addActionListener { worker.cancel(true) }
-        }
-        placeholderPanel.add(cancelButton, BorderLayout.SOUTH)
     }
 
     private fun createTree(): Tree {
