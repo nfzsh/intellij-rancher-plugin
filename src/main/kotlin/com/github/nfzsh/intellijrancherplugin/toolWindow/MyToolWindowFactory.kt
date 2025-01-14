@@ -141,10 +141,6 @@ class MyToolWindowFactory : ToolWindowFactory {
             override fun doInBackground(): JPanel {
                 // 在后台加载耗时内容
                 val mainPanel = JPanel(BorderLayout())
-
-                // 模拟耗时操作
-                Thread.sleep(3000) // 模拟加载耗时 3 秒
-
                 // 创建树状结构
                 val tree = createTree()
                 val scrollPane = JBScrollPane(tree).apply {
@@ -209,10 +205,8 @@ class MyToolWindowFactory : ToolWindowFactory {
         // 创建树的根节点
         val rootNode = DefaultMutableTreeNode("Projects")
         basicInfos?.forEach {
-            val projectNode = DefaultMutableTreeNode(it.second)
-            val namespaceNode = DefaultMutableTreeNode(it.third)
-            rootNode.add(projectNode)
-            projectNode.add(namespaceNode)
+            val namespaceNode = DefaultMutableTreeNode(it.third) // 直接使用 Namespace 作为子节点
+            rootNode.add(namespaceNode)
             val deployments = rancherInfoService?.getDeployments(it.second)
             deployments?.forEach { deployment ->
                 val deploymentNode = DefaultMutableTreeNode(deployment)
@@ -230,29 +224,29 @@ class MyToolWindowFactory : ToolWindowFactory {
 
         // 监听树形选择事件
         tree.addTreeSelectionListener { event ->
-            // 2 project 3 namespace 4 deployment 5 pod
+            // 调整路径层级：1 Root -> 2 Namespace -> 3 Deployment -> 4 Pod
             val pathCount = event.path.pathCount
             when (pathCount) {
-                4 -> {
+                3 -> {
                     // deployment
                     deploymentName = event.path.lastPathComponent.toString()
                     val namespace = event.path.parentPath.lastPathComponent.toString()
-                    val projectId = event.path.parentPath.parentPath.lastPathComponent.toString()
-                    val cluster = projectId.split(":")[0]
-                    basicInfo = Triple(cluster, projectId, namespace)
+                    val projectId = basicInfos?.find { it.third == namespace }?.second // 根据 Namespace 查找 Project
+                    val cluster = projectId?.split(":")?.get(0) ?: ""
+                    basicInfo = Triple(cluster, projectId ?: "", namespace)
                     redeployButton.isEnabled = true
                     remoteLogButton.isEnabled = false
                     remoteShellButton.isEnabled = false
                 }
 
-                5 -> {
+                4 -> {
                     // pod
                     podName = event.path.lastPathComponent.toString()
                     deploymentName = event.path.parentPath.lastPathComponent.toString()
                     val namespace = event.path.parentPath.parentPath.lastPathComponent.toString()
-                    val projectId = event.path.parentPath.parentPath.parentPath.lastPathComponent.toString()
-                    val cluster = projectId.split(":")[0]
-                    basicInfo = Triple(cluster, projectId, namespace)
+                    val projectId = basicInfos?.find { it.third == namespace }?.second // 根据 Namespace 查找 Project
+                    val cluster = projectId?.split(":")?.get(0) ?: ""
+                    basicInfo = Triple(cluster, projectId ?: "", namespace)
                     redeployButton.isEnabled = false
                     remoteLogButton.isEnabled = true
                     remoteShellButton.isEnabled = true
@@ -268,7 +262,6 @@ class MyToolWindowFactory : ToolWindowFactory {
         }
         return tree
     }
-
 
     private fun handleRedeploy() {
         val success = basicInfo?.let { rancherInfoService?.redeploy(deploymentName, it) }
