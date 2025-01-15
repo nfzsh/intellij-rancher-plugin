@@ -2,6 +2,8 @@ package com.github.nfzsh.intellijrancherplugin.services
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.nfzsh.intellijrancherplugin.settings.Settings
+import com.intellij.execution.ui.ConsoleView
+import com.intellij.execution.ui.ConsoleViewContentType
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.thisLogger
@@ -92,7 +94,7 @@ class RancherInfoService(private val project: Project) {
         return response.code == 200
     }
 
-    fun getLogs(basicInfo : Triple<String, String, String>, deploymentName: String, podName: String): WebSocket {
+    fun getLogs(basicInfo : Triple<String, String, String>, deploymentName: String, podName: String, consoleView: ConsoleView): WebSocket {
         val client = createUnsafeOkHttpClient()
         val setting = getSetting()
         val request = Request.Builder()
@@ -110,7 +112,8 @@ class RancherInfoService(private val project: Project) {
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-                project.getService(LogService::class.java).log(bytes.utf8())
+//                project.getService(LogService::class.java).log(bytes.utf8())
+                consoleView.print(bytes.utf8(), ConsoleViewContentType.NORMAL_OUTPUT)
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {

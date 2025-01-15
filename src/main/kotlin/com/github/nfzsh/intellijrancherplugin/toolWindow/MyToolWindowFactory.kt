@@ -1,10 +1,8 @@
 package com.github.nfzsh.intellijrancherplugin.toolWindow
 
-import com.github.nfzsh.intellijrancherplugin.MyBundle
-import com.github.nfzsh.intellijrancherplugin.services.MyProjectService
 import com.github.nfzsh.intellijrancherplugin.services.RancherInfoService
+import com.intellij.execution.filters.TextConsoleBuilderFactory
 import com.intellij.icons.AllIcons
-import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
@@ -15,6 +13,8 @@ import com.intellij.terminal.JBTerminalSystemSettingsProviderBase
 import com.intellij.terminal.JBTerminalWidget
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.content.ContentFactory
+import com.intellij.ui.content.ContentManagerEvent
+import com.intellij.ui.content.ContentManagerListener
 import com.intellij.ui.treeStructure.Tree
 import com.intellij.util.ui.UIUtil
 import java.awt.BorderLayout
@@ -42,10 +42,11 @@ class MyToolWindowFactory : ToolWindowFactory {
     private val remoteShellButton = JButton("Remote Shell")
     private val refreshCancelButton = JButton("Refresh")
     private var rancherInfoService: RancherInfoService? = null
+    private var remoteToolWindow: ToolWindow? = null
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         rancherInfoService = RancherInfoService(project)
-
+        remoteToolWindow = ToolWindowManager.getInstance(project).getToolWindow("Remote")
         // 创建主面板，使用 BorderLayout
         val mainPanel = JPanel(BorderLayout())
 
@@ -53,7 +54,6 @@ class MyToolWindowFactory : ToolWindowFactory {
         val contentPanel = JPanel(BorderLayout()).apply {
             add(JLabel("Loading...", SwingConstants.CENTER), BorderLayout.CENTER) // 初始显示加载提示
         }
-
         // 创建刷新/取消按钮
         refreshCancelButton.apply {
             icon = AllIcons.Actions.Refresh
@@ -265,14 +265,35 @@ class MyToolWindowFactory : ToolWindowFactory {
 
     private fun handleRedeploy() {
         val success = basicInfo?.let { rancherInfoService?.redeploy(deploymentName, it) }
+//        if (success == true) {
+//            Messages.showInfoMessage("Redeploy Success", "Rancher Plugin")
+//        } else {
+//            Messages.showErrorDialog("Redeploy Failed", "Rancher Plugin")
+//        }
     }
 
     private fun handleRemoteLog(project: Project) {
-        remoteLogButton.setEnabled(true)
-        val service = project.service<MyProjectService>()
-        basicInfo?.let { service.getDeployment(project, it, deploymentName, podName) }
-        remoteLogButton.text = if (project.getService(MyProjectService::class.java).isRunning)
-            MyBundle.message("stop") else MyBundle.message("start")
+
+        // 创建 Content 并设置为可关闭
+        val consoleView = TextConsoleBuilderFactory.getInstance().createBuilder(project).console
+        val logContent = ContentFactory.getInstance().createContent(consoleView.component, "console_${podName}", false).apply {
+            isCloseable = true
+        }
+        // 添加 Content 到 ToolWindow
+        remoteToolWindow?.contentManager?.addContent(logContent)
+        val webSocket = basicInfo?.let { rancherInfoService?.getLogs(it, deploymentName, podName, consoleView) }
+        remoteToolWindow?.show()
+        remoteToolWindow?.contentManager?.setSelectedContent(logContent)
+        // 监听 Content 关闭事件
+        remoteToolWindow?.contentManager?.addContentManagerListener(object : ContentManagerListener {
+            override fun contentRemoved(event: ContentManagerEvent) {
+                if (event.content == logContent) {
+                    webSocket?.close(1000, "")
+                }
+            }
+        })
+
+
     }
 
     private fun handleRemoteShell(project: Project) {
@@ -283,11 +304,10 @@ class MyToolWindowFactory : ToolWindowFactory {
         val terminalWidget = JBTerminalWidget(project, terminalSettingsProvider, parentDisposable)
         val shellContent = ContentFactory.getInstance().createContent(
             terminalWidget.component,
-            "RemoteShell-${podName}", false
+            "shell_${podName}", false
         )
         shellContent.isCloseable = true
         // 初始化 WebSocket 并连接
-        val remoteToolWindow = ToolWindowManager.getInstance(project).getToolWindow("Remote")
         val connector = remoteToolWindow?.let {
             basicInfo?.let { it1 ->
                 RancherInfoService(project).createWebSocketTtyConnector(
@@ -299,6 +319,7 @@ class MyToolWindowFactory : ToolWindowFactory {
         terminalWidget.createTerminalSession(connector)
         terminalWidget.start(connector)
         remoteToolWindow?.contentManager?.addContent(shellContent)
+        remoteToolWindow?.show()
         remoteToolWindow?.contentManager?.setSelectedContent(shellContent)
     }
 

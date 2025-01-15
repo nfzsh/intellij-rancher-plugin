@@ -19,11 +19,12 @@
     </extensions>
 
     <extensions defaultExtensionNs="com.intellij">
-        <toolWindow factoryClass="com.github.nfzsh.intellijrancherplugin.toolWindow.MyToolWindowFactory"
-                    id="MyToolWindow"/>
         <toolWindow id="Remote"
                     icon="AllIcons.RunConfigurations.Remote"
                     factoryClass="com.github.nfzsh.intellijrancherplugin.toolWindow.LogWindowFactory"
-                    anchor="bottom"/>
+                    anchor="bottom"
+                    canCloseContents="true"/>
+        <toolWindow factoryClass="com.github.nfzsh.intellijrancherplugin.toolWindow.MyToolWindowFactory"
+                    id="MyToolWindow"/>
     </extensions>
 </idea-plugin>
