@@ -130,7 +130,7 @@ class RancherInfoService(private val project: Project) {
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                println("Error: ${t.message}")
+                consoleView.print("Error: ${t.message}", ConsoleViewContentType.NORMAL_OUTPUT)
 
             }
         }
@@ -186,10 +186,6 @@ class RancherInfoService(private val project: Project) {
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 isConnected = false
-                ApplicationManager.getApplication().invokeLater {
-                    terminalWidget.close()
-                    contentManager.removeContent(content, true) // true 表示销毁资源
-                }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
