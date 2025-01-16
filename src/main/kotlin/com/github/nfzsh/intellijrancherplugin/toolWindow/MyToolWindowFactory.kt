@@ -263,11 +263,11 @@ class MyToolWindowFactory : ToolWindowFactory {
 
     private fun handleRedeploy() {
         val success = basicInfo?.let { rancherInfoService?.redeploy(deploymentName, it) }
-//        if (success == true) {
-//            Messages.showInfoMessage("Redeploy Success", "Rancher Plugin")
-//        } else {
-//            Messages.showErrorDialog("Redeploy Failed", "Rancher Plugin")
-//        }
+        if(success!!) {
+            Messages.showInfoMessage("Redeploy success.", "Success")
+        } else {
+            Messages.showErrorDialog("Redeploy failed.", "Error")
+        }
     }
 
     private fun handleRemoteLog(project: Project) {
