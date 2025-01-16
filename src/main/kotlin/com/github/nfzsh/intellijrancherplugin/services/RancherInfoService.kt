@@ -314,10 +314,7 @@ class RancherInfoService(private val project: Project) {
             println("Error: ${e.message}")
             throw IllegalArgumentException("Error: ${e.message}")
         }
-        val res = response.body?.string()
-        if (res == null) {
-            throw IllegalArgumentException("Data is null")
-        }
+        val res = response.body?.string() ?: throw IllegalArgumentException("Data is null")
         val mapper = getMapper()
         val data = mapper.readValue(res, Map::class.java)
         return data["data"]
