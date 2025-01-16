@@ -3,7 +3,7 @@
     <id>com.github.nfzsh.intellijrancherplugin</id>
     <name>Rancher-Remote</name>
     <vendor>nfzsh</vendor>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <description>用于 Rancher的远程调试工具，可以使用远程shell，log，或远程服务重启等操作
         A plugin that integrates with Rancher to provide various tools such as access to Rancher environment's shell, log viewing, and service redeployment.
     </description>
