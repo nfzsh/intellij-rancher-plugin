@@ -1,10 +1,14 @@
 package com.github.nfzsh.intellijrancherplugin.settings
 
+import com.github.nfzsh.intellijrancherplugin.services.RancherInfoService
+import com.github.nfzsh.intellijrancherplugin.util.SettingUtil
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Messages
 import com.intellij.util.ui.JBUI
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
+import java.time.LocalDateTime
 import javax.swing.*
 import javax.swing.border.TitledBorder
 
@@ -59,13 +63,51 @@ class SettingsConfigurable(private val project: Project) : Configurable {
         addLabelAndTextField(projectMainPanel, "Rancher Host:", projectRancherHost, 0)
         addLabelAndTextField(projectMainPanel, "Rancher API Key:", projectRancherApiKey, 1)
 
-        // 将子面板加入主面板
+        // 校验按钮
+        val validateButton = JButton("Validate Configuration")
+        validateButton.addActionListener {
+            validateConfiguration()
+        }
+
+        // 将子面板和按钮加入主面板
         mainPanel.add(globalMainPanel)
         mainPanel.add(Box.createVerticalStrut(10)) // 增加间距
         mainPanel.add(projectMainPanel)
+        mainPanel.add(Box.createVerticalStrut(10)) // 增加间距
+        mainPanel.add(validateButton)
 
         return mainPanel
     }
+
+    /**
+     * 校验配置是否正确
+     */
+    private fun validateConfiguration(): Boolean {
+        val globalHost = globalRancherHost.text
+        val globalApiKey = globalRancherApiKey.text
+        val projectHost = projectRancherHost.text
+        val projectApiKey = projectRancherApiKey.text
+        val host = SettingUtil.getHost(globalHost, projectHost)
+        val apiKey = SettingUtil.getApiKey(globalApiKey, projectApiKey)
+        val rancherInfoService = RancherInfoService(project)
+        val date = rancherInfoService.getTokenExpiredTime(host, apiKey)
+        var isValid = true // 假设校验通过
+        if (date == null) {
+            isValid = false
+        }
+        if (isValid) {
+            if (date?.isBefore(LocalDateTime.now()) == true) {
+                Messages.showErrorDialog("Token expired", "Rancher Setting")
+                return false
+            }
+            Messages.showInfoMessage("Check success", "Rancher Setting")
+            return true
+        } else {
+            Messages.showErrorDialog("This is an error message", "Rancher Setting")
+            return false
+        }
+    }
+
     /**
      * 辅助方法：向面板中添加标签和输入框
      */
@@ -92,6 +134,10 @@ class SettingsConfigurable(private val project: Project) : Configurable {
     }
 
     override fun apply() {
+        val success = validateConfiguration()
+        if(!success) {
+            return
+        }
         // 保存用户输入的配置
         val globalSettings = GlobalSettings.instance
         globalSettings.rancherHost = globalRancherHost.text

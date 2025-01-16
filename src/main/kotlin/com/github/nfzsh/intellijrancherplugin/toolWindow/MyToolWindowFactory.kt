@@ -5,6 +5,7 @@ import com.intellij.execution.filters.TextConsoleBuilderFactory
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
@@ -43,17 +44,15 @@ class MyToolWindowFactory : ToolWindowFactory {
     private val refreshCancelButton = JButton("Refresh")
     private var rancherInfoService: RancherInfoService? = null
     private var remoteToolWindow: ToolWindow? = null
+    // 创建占位符内容区域，用于显示加载提示或实际内容
+    private val contentPanel = JPanel(BorderLayout()).apply {
+        add(JLabel("Loading...", SwingConstants.CENTER), BorderLayout.CENTER) // 初始显示加载提示
+    }
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
-        rancherInfoService = RancherInfoService(project)
-        remoteToolWindow = ToolWindowManager.getInstance(project).getToolWindow("Remote")
         // 创建主面板，使用 BorderLayout
         val mainPanel = JPanel(BorderLayout())
 
-        // 创建占位符内容区域，用于显示加载提示或实际内容
-        val contentPanel = JPanel(BorderLayout()).apply {
-            add(JLabel("Loading...", SwingConstants.CENTER), BorderLayout.CENTER) // 初始显示加载提示
-        }
         // 创建刷新/取消按钮
         refreshCancelButton.apply {
             icon = AllIcons.Actions.Refresh
@@ -103,28 +102,27 @@ class MyToolWindowFactory : ToolWindowFactory {
         // 将主面板添加到 ToolWindow 内容
         val content = ContentFactory.getInstance().createContent(mainPanel, null, false)
         toolWindow.contentManager.addContent(content)
-
+        rancherInfoService = RancherInfoService(project)
+        remoteToolWindow = ToolWindowManager.getInstance(project).getToolWindow("Remote")
         // 初始加载内容
-        reloadContent(contentPanel, project, refreshCancelButton, redeployButton, remoteLogButton, remoteShellButton)
+        reloadContent(project)
     }
 
     /**
      * 异步加载内容并更新 UI
      */
-    private fun reloadContent(
-        contentPanel: JPanel,
-        project: Project,
-        refreshCancelButton: JButton,
-        redeployButton: JButton,
-        remoteLogButton: JButton,
-        remoteShellButton: JButton
-    ) {
+    private fun reloadContent(project: Project) {
         // 显示加载提示
         contentPanel.removeAll()
         contentPanel.add(JLabel("Loading...", SwingConstants.CENTER), BorderLayout.CENTER)
         contentPanel.revalidate()
         contentPanel.repaint()
-
+        if(rancherInfoService?.checkReady() == false) {
+            Messages.showErrorDialog(project, "Please check your settings", "Error")
+            refreshCancelButton.text = "Refresh"
+            refreshCancelButton.isEnabled = true
+            return
+        }
         // 更新刷新/取消按钮状态
         refreshCancelButton.text = "Cancel"
         refreshCancelButton.icon = AllIcons.Actions.Cancel
@@ -191,7 +189,7 @@ class MyToolWindowFactory : ToolWindowFactory {
                 worker.cancel(true)
             } else {
                 // 如果当前是刷新按钮，则重新加载内容
-                reloadContent(contentPanel, project, refreshCancelButton, redeployButton, remoteLogButton, remoteShellButton)
+                reloadContent(project)
             }
         }
 

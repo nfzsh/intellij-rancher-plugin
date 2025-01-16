@@ -13,6 +13,7 @@ import com.intellij.ui.content.Content
 import com.intellij.ui.content.ContentManager
 import com.jediterm.core.util.TermSize
 import com.jediterm.terminal.TtyConnector
+import java.time.LocalDateTime
 import okhttp3.*
 import okhttp3.RequestBody.Companion.toRequestBody
 import okio.ByteString
@@ -22,6 +23,8 @@ import java.security.KeyManagementException
 import java.security.NoSuchAlgorithmException
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
+import java.time.Instant
+import java.time.ZoneId
 import java.util.*
 import javax.net.ssl.SSLContext
 import javax.net.ssl.X509TrustManager
@@ -62,7 +65,7 @@ class RancherInfoService(private val project: Project) {
         return info
     }
 
-    fun getDeployments(project : String): MutableList<String> {
+    fun getDeployments(project: String): MutableList<String> {
         val list: Any? = getData("/v3/project/${project}/deployments")
         val nameList = mutableListOf<String>()
         if (list is List<*>) {
@@ -82,7 +85,7 @@ class RancherInfoService(private val project: Project) {
         return nameList
     }
 
-    fun redeploy(deploymentName: String, basicInfo : Triple<String, String, String>): Boolean {
+    fun redeploy(deploymentName: String, basicInfo: Triple<String, String, String>): Boolean {
         val setting = getSetting()
         val client = createUnsafeOkHttpClient()
         val request = Request.Builder()
@@ -94,7 +97,12 @@ class RancherInfoService(private val project: Project) {
         return response.code == 200
     }
 
-    fun getLogs(basicInfo : Triple<String, String, String>, deploymentName: String, podName: String, consoleView: ConsoleView): WebSocket {
+    fun getLogs(
+        basicInfo: Triple<String, String, String>,
+        deploymentName: String,
+        podName: String,
+        consoleView: ConsoleView
+    ): WebSocket {
         val client = createUnsafeOkHttpClient()
         val setting = getSetting()
         val request = Request.Builder()
@@ -134,7 +142,7 @@ class RancherInfoService(private val project: Project) {
         terminalWidget: JBTerminalWidget,
         contentManager: ContentManager,
         content: Content,
-        basicInfo : Triple<String, String, String>,
+        basicInfo: Triple<String, String, String>,
         deploymentName: String,
         podName: String
     ): TtyConnector {
@@ -267,7 +275,7 @@ class RancherInfoService(private val project: Project) {
         return namespaces
     }
 
-    fun getPodNames(basicInfo : Triple<String, String, String>, name : String): MutableList<String> {
+    fun getPodNames(basicInfo: Triple<String, String, String>, name: String): MutableList<String> {
         val list: Any? = getData("/v3/project/${basicInfo.second}/pods")
         val pods = mutableListOf<String>()
         if (list is List<*>) {
@@ -283,6 +291,38 @@ class RancherInfoService(private val project: Project) {
         return pods
     }
 
+    fun getTokenExpiredTime(host: String, apiKey: String): LocalDateTime? {
+        if (apiKey.isEmpty() || host.isEmpty()) return null
+        val list: Any?
+        try {
+            list = getData("/v3/token", host, apiKey)
+        } catch (e: Exception) {
+            return null
+        }
+        val cattleAccessKey = apiKey.replace("Bearer ", "").split(":")[0]
+        if (list is List<*>) {
+            list.forEach {
+                if (it is Map<*, *>) {
+                    if (it["id"] == cattleAccessKey) {
+                        val expires = it["expiresAt"] as String
+                        val instant = Instant.parse(expires)
+                        return LocalDateTime.ofInstant(instant, ZoneId.systemDefault())
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    fun checkReady(): Boolean {
+        try {
+            getData("/v3/token")
+        } catch (e: Exception) {
+            return false
+        }
+        return true
+    }
+
     private fun getSetting(): Pair<String, String> {
         val settings = Settings(project)
         val url: String
@@ -293,19 +333,18 @@ class RancherInfoService(private val project: Project) {
         }
         val key: String
         if (settings.rancherApiKey.isNotEmpty()) {
-            key = "Bearer " + settings.rancherApiKey
+            key = settings.rancherApiKey
         } else {
             throw IllegalArgumentException("Rancher api key is not set")
         }
         return Pair(url, key)
     }
 
-    private fun getData(url: String): Any? {
-        val setting = getSetting()
+    private fun getData(url: String, host: String, apiKey: String): Any? {
         val client = createUnsafeOkHttpClient()
         val request = Request.Builder()
-            .url("https://${setting.first}$url")
-            .header("Authorization", setting.second)
+            .url("https://${host}$url")
+            .header("Authorization", apiKey)
             .get()
             .build()
         val response = try {
@@ -314,10 +353,18 @@ class RancherInfoService(private val project: Project) {
             println("Error: ${e.message}")
             throw IllegalArgumentException("Error: ${e.message}")
         }
+        if(response.code != 200) {
+            throw IllegalArgumentException("Error: ${response.code}")
+        }
         val res = response.body?.string() ?: throw IllegalArgumentException("Data is null")
         val mapper = getMapper()
         val data = mapper.readValue(res, Map::class.java)
         return data["data"]
+    }
+
+    private fun getData(url: String): Any? {
+        val setting = getSetting()
+        return getData(url, setting.first, setting.second)
     }
 
     private fun createUnsafeOkHttpClient(): OkHttpClient {

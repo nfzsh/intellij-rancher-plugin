@@ -28,6 +28,7 @@
                     anchor="bottom"
                     canCloseContents="true"/>
         <toolWindow factoryClass="com.github.nfzsh.intellijrancherplugin.toolWindow.MyToolWindowFactory"
-                    id="MyToolWindow"/>
+                    icon="AllIcons.Actions.Compile"
+                    id="Rancher Remote Control"/>
     </extensions>
 </idea-plugin>

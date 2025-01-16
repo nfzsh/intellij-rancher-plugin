@@ -21,7 +21,6 @@ class ProjectSettings : PersistentStateComponent<ProjectSettings.State> {
 
     var rancherHost: String = ""
     var rancherApiKey: String = ""
-    var isSslCheckEnabled: Boolean? = null
 
     data class State(
         var field1: String = "",
@@ -34,14 +33,12 @@ class ProjectSettings : PersistentStateComponent<ProjectSettings.State> {
     override fun getState(): State {
         state.field1 = rancherHost
         state.field2 = rancherApiKey
-        state.isFeatureEnabled = isSslCheckEnabled
         return state
     }
 
     override fun loadState(state: State) {
         this.rancherHost = state.field1
         this.rancherApiKey = state.field2
-        this.isSslCheckEnabled = state.isFeatureEnabled
     }
 
     companion object {
