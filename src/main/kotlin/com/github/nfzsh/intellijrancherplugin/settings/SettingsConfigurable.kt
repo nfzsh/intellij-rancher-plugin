@@ -1,5 +1,6 @@
 package com.github.nfzsh.intellijrancherplugin.settings
 
+import com.github.nfzsh.intellijrancherplugin.listeners.ConfigChangeNotifier
 import com.github.nfzsh.intellijrancherplugin.services.RancherInfoService
 import com.github.nfzsh.intellijrancherplugin.util.SettingUtil
 import com.intellij.openapi.options.Configurable
@@ -136,7 +137,8 @@ class SettingsConfigurable(private val project: Project) : Configurable {
     override fun apply() {
         val success = validateConfiguration()
         if(!success) {
-            return
+            Messages.showErrorDialog("This is an error message", "Rancher Setting")
+//            return
         }
         // 保存用户输入的配置
         val globalSettings = GlobalSettings.instance
@@ -145,6 +147,7 @@ class SettingsConfigurable(private val project: Project) : Configurable {
         val projectSettings = ProjectSettings.getInstance(project)
         projectSettings.rancherHost = projectRancherHost.text
         projectSettings.rancherApiKey = projectRancherApiKey.text
+        ConfigChangeNotifier.notifyConfigChanged()
     }
 
     override fun reset() {

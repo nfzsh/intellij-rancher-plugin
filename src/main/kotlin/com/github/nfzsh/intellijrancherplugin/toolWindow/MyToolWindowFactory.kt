@@ -1,5 +1,7 @@
 package com.github.nfzsh.intellijrancherplugin.toolWindow
 
+import com.github.nfzsh.intellijrancherplugin.listeners.ConfigChangeListener
+import com.github.nfzsh.intellijrancherplugin.listeners.ConfigChangeNotifier
 import com.github.nfzsh.intellijrancherplugin.services.RancherInfoService
 import com.intellij.execution.filters.TextConsoleBuilderFactory
 import com.intellij.icons.AllIcons
@@ -57,7 +59,7 @@ class MyToolWindowFactory : ToolWindowFactory {
         refreshCancelButton.apply {
             icon = AllIcons.Actions.Refresh
             toolTipText = "Reload content"
-            isEnabled = false // 初始状态为禁用
+            isEnabled = true // 初始状态为禁用
         }
 
         // 创建其他按钮（初始状态为隐藏）
@@ -84,7 +86,13 @@ class MyToolWindowFactory : ToolWindowFactory {
             isEnabled = false
             addActionListener { handleRemoteShell(project) }
         }
-
+        // 订阅配置更改事件
+        val connection = project.messageBus.connect()
+        connection.subscribe(ConfigChangeNotifier.topic, object : ConfigChangeListener {
+            override fun onConfigChanged() {
+                reloadContent(project)
+            }
+        })
         // 创建按钮区域
         val buttonPanel = JPanel(FlowLayout(FlowLayout.LEFT, 10, 10)).apply {
             border = BorderFactory.createEmptyBorder(10, 10, 10, 10)

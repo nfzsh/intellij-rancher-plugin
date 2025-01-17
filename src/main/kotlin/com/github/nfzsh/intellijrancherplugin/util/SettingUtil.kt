@@ -10,6 +10,9 @@ object SettingUtil {
         var rancherHost = projectHost.ifEmpty {
             globalHost
         }
+        if(rancherHost.isEmpty()) {
+            return ""
+        }
         if(!rancherHost.endsWith("/")) {
             rancherHost += "/"
         }
@@ -20,6 +23,9 @@ object SettingUtil {
     fun getApiKey(globalApiKey:String, projectApiKey:String): String {
         val rancherApiKey = projectApiKey.ifEmpty {
             globalApiKey
+        }
+        if(rancherApiKey.isEmpty()) {
+            return ""
         }
         return "Bearer $rancherApiKey"
     }

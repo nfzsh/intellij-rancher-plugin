@@ -1,6 +1,8 @@
 package com.github.nfzsh.intellijrancherplugin.services
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.github.nfzsh.intellijrancherplugin.listeners.ConfigChangeListener
+import com.github.nfzsh.intellijrancherplugin.listeners.ConfigChangeNotifier
 import com.github.nfzsh.intellijrancherplugin.settings.Settings
 import com.intellij.execution.ui.ConsoleView
 import com.intellij.execution.ui.ConsoleViewContentType
@@ -41,12 +43,17 @@ class RancherInfoService(private val project: Project) {
      * 集群信息
      * @return cluster, project, namespace
      */
-    val basicInfo: MutableList<Triple<String, String, String>>
+    var basicInfo: MutableList<Triple<String, String, String>> = getInfo()
 
     init {
-        basicInfo = getInfo()
+        // 订阅配置更改事件
+        val connection = project.messageBus.connect()
+        connection.subscribe(ConfigChangeNotifier.topic, object : ConfigChangeListener {
+            override fun onConfigChanged() {
+                basicInfo = getInfo()
+            }
+        })
     }
-
     private fun getInfo(): MutableList<Triple<String, String, String>> {
         val list: Any? = getData("/v3/projects")
         val info: MutableList<Triple<String, String, String>> = mutableListOf()
@@ -325,18 +332,21 @@ class RancherInfoService(private val project: Project) {
         if (settings.rancherHost.isNotEmpty()) {
             url = settings.rancherHost
         } else {
-            throw IllegalArgumentException("Rancher host is not set")
+            return Pair("", "")
         }
         val key: String
         if (settings.rancherApiKey.isNotEmpty()) {
             key = settings.rancherApiKey
         } else {
-            throw IllegalArgumentException("Rancher api key is not set")
+            return Pair("", "")
         }
         return Pair(url, key)
     }
 
     private fun getData(url: String, host: String, apiKey: String): Any? {
+        if(host.isEmpty() || apiKey.isEmpty()) {
+            return null
+        }
         val client = createUnsafeOkHttpClient()
         val request = Request.Builder()
             .url("https://${host}$url")
