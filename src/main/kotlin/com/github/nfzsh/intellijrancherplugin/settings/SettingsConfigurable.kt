@@ -90,8 +90,7 @@ class SettingsConfigurable(private val project: Project) : Configurable {
         val projectApiKey = projectRancherApiKey.text
         val host = SettingUtil.getHost(globalHost, projectHost)
         val apiKey = SettingUtil.getApiKey(globalApiKey, projectApiKey)
-        val rancherInfoService = RancherInfoService(project)
-        val date = rancherInfoService.getTokenExpiredTime(host, apiKey)
+        val date = RancherInfoService.getTokenExpiredTime(host, apiKey)
         var isValid = true // 假设校验通过
         if (date == null) {
             isValid = false

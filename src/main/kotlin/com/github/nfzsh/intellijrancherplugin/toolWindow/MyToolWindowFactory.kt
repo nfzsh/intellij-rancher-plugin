@@ -90,6 +90,7 @@ class MyToolWindowFactory : ToolWindowFactory {
         val connection = project.messageBus.connect()
         connection.subscribe(ConfigChangeNotifier.topic, object : ConfigChangeListener {
             override fun onConfigChanged() {
+                rancherInfoService = RancherInfoService(project)
                 reloadContent(project)
             }
         })

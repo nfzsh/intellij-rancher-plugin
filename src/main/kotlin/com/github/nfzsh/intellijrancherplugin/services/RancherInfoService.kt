@@ -293,29 +293,90 @@ class RancherInfoService(private val project: Project) {
         }
         return pods
     }
-
-    fun getTokenExpiredTime(host: String, apiKey: String): LocalDateTime? {
-        if (apiKey.isEmpty() || host.isEmpty()) return null
-        val list: Any?
-        try {
-            list = getData("/v3/token", host, apiKey)
-        } catch (e: Exception) {
-            return null
-        }
-        val cattleAccessKey = apiKey.replace("Bearer ", "").split(":")[0]
-        if (list is List<*>) {
-            list.forEach {
-                if (it is Map<*, *>) {
-                    if (it["id"] == cattleAccessKey) {
-                        val expires = it["expiresAt"] as String
-                        val instant = Instant.parse(expires)
-                        return LocalDateTime.ofInstant(instant, ZoneId.systemDefault())
+    companion object {
+        @JvmStatic
+        fun getTokenExpiredTime(host: String, apiKey: String): LocalDateTime? {
+            if (apiKey.isEmpty() || host.isEmpty()) return null
+            val list: Any?
+            try {
+                list = getData("/v3/token", host, apiKey)
+            } catch (e: Exception) {
+                return null
+            }
+            val cattleAccessKey = apiKey.replace("Bearer ", "").split(":")[0]
+            if (list is List<*>) {
+                list.forEach {
+                    if (it is Map<*, *>) {
+                        if (it["id"] == cattleAccessKey) {
+                            val expires = it["expiresAt"] as String
+                            val instant = Instant.parse(expires)
+                            return LocalDateTime.ofInstant(instant, ZoneId.systemDefault())
+                        }
                     }
                 }
             }
+            return null
         }
-        return null
+        private fun getData(url: String, host: String, apiKey: String): Any? {
+            if(host.isEmpty() || apiKey.isEmpty()) {
+                return null
+            }
+            val client = createUnsafeOkHttpClient()
+            val request = Request.Builder()
+                .url("https://${host}$url")
+                .header("Authorization", apiKey)
+                .get()
+                .build()
+            val response = try {
+                client.newCall(request).execute()
+            } catch (e: Exception) {
+                println("Error: ${e.message}")
+                throw IllegalArgumentException("Error: ${e.message}")
+            }
+            if(response.code != 200) {
+                throw IllegalArgumentException("Error: ${response.code}")
+            }
+            val res = response.body?.string() ?: throw IllegalArgumentException("Data is null")
+            val mapper = getMapper()
+            val data = mapper.readValue(res, Map::class.java)
+            return data["data"]
+        }
+        private fun createUnsafeOkHttpClient(): OkHttpClient {
+            val trustAllCertificates = object : X509TrustManager {
+                @Throws(CertificateException::class)
+                override fun checkClientTrusted(chain: Array<X509Certificate>?, authType: String?) {
+                }
+
+                @Throws(CertificateException::class)
+                override fun checkServerTrusted(chain: Array<X509Certificate>?, authType: String?) {
+                }
+
+                override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+            }
+
+            val sslContext: SSLContext = try {
+                SSLContext.getInstance("TLS").apply {
+                    init(null, arrayOf(trustAllCertificates), java.security.SecureRandom())
+                }
+            } catch (e: NoSuchAlgorithmException) {
+                throw RuntimeException("Unable to create SSLContext", e)
+            } catch (e: KeyManagementException) {
+                throw RuntimeException("Unable to initialize SSLContext", e)
+            }
+
+            val sslSocketFactory = sslContext.socketFactory
+
+            return OkHttpClient.Builder()
+                .sslSocketFactory(sslSocketFactory, trustAllCertificates)
+                .hostnameVerifier { _, _ -> true }  // 信任所有主机
+                .build()
+
+        }
+        private fun getMapper(): ObjectMapper {
+            return ObjectMapper()
+        }
     }
+
 
     fun checkReady(): Boolean {
         try {
@@ -343,69 +404,10 @@ class RancherInfoService(private val project: Project) {
         return Pair(url, key)
     }
 
-    private fun getData(url: String, host: String, apiKey: String): Any? {
-        if(host.isEmpty() || apiKey.isEmpty()) {
-            return null
-        }
-        val client = createUnsafeOkHttpClient()
-        val request = Request.Builder()
-            .url("https://${host}$url")
-            .header("Authorization", apiKey)
-            .get()
-            .build()
-        val response = try {
-            client.newCall(request).execute()
-        } catch (e: Exception) {
-            println("Error: ${e.message}")
-            throw IllegalArgumentException("Error: ${e.message}")
-        }
-        if(response.code != 200) {
-            throw IllegalArgumentException("Error: ${response.code}")
-        }
-        val res = response.body?.string() ?: throw IllegalArgumentException("Data is null")
-        val mapper = getMapper()
-        val data = mapper.readValue(res, Map::class.java)
-        return data["data"]
-    }
+
 
     private fun getData(url: String): Any? {
         val setting = getSetting()
         return getData(url, setting.first, setting.second)
-    }
-
-    private fun createUnsafeOkHttpClient(): OkHttpClient {
-        val trustAllCertificates = object : X509TrustManager {
-            @Throws(CertificateException::class)
-            override fun checkClientTrusted(chain: Array<X509Certificate>?, authType: String?) {
-            }
-
-            @Throws(CertificateException::class)
-            override fun checkServerTrusted(chain: Array<X509Certificate>?, authType: String?) {
-            }
-
-            override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-        }
-
-        val sslContext: SSLContext = try {
-            SSLContext.getInstance("TLS").apply {
-                init(null, arrayOf(trustAllCertificates), java.security.SecureRandom())
-            }
-        } catch (e: NoSuchAlgorithmException) {
-            throw RuntimeException("Unable to create SSLContext", e)
-        } catch (e: KeyManagementException) {
-            throw RuntimeException("Unable to initialize SSLContext", e)
-        }
-
-        val sslSocketFactory = sslContext.socketFactory
-
-        return OkHttpClient.Builder()
-            .sslSocketFactory(sslSocketFactory, trustAllCertificates)
-            .hostnameVerifier { _, _ -> true }  // 信任所有主机
-            .build()
-
-    }
-
-    private fun getMapper(): ObjectMapper {
-        return ObjectMapper()
     }
 }
