@@ -21,7 +21,6 @@ class GlobalSettings : PersistentStateComponent<GlobalSettings.State> {
 
     var rancherHost: String = ""
     var rancherApiKey: String = ""
-    var isSslCheckEnabled: Boolean = false
 
     data class State(
         var field1: String = "",
@@ -34,14 +33,12 @@ class GlobalSettings : PersistentStateComponent<GlobalSettings.State> {
     override fun getState(): State {
         state.field1 = rancherHost
         state.field2 = rancherApiKey
-        state.isFeatureEnabled = isSslCheckEnabled
         return state
     }
 
     override fun loadState(state: State) {
         this.rancherHost = state.field1
         this.rancherApiKey = state.field2
-        this.isSslCheckEnabled = state.isFeatureEnabled
     }
 
     companion object {
