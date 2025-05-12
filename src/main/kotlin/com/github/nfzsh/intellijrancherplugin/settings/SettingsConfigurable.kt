@@ -146,7 +146,7 @@ class SettingsConfigurable(private val project: Project) : Configurable {
         val projectSettings = ProjectSettings.getInstance(project)
         projectSettings.rancherHost = projectRancherHost.text
         projectSettings.rancherApiKey = projectRancherApiKey.text
-        ConfigChangeNotifier.notifyConfigChanged()
+        ConfigChangeNotifier.notifyConfigChanged(project)
     }
 
     override fun reset() {

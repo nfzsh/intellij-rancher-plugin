@@ -1,6 +1,6 @@
 package com.github.nfzsh.intellijrancherplugin.listeners
 
-import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.project.Project
 import com.intellij.util.messages.Topic
 
 /**
@@ -11,8 +11,8 @@ import com.intellij.util.messages.Topic
 object ConfigChangeNotifier {
     val topic = Topic.create("MyPluginConfigChange", ConfigChangeListener::class.java)
 
-    fun notifyConfigChanged() {
-        ApplicationManager.getApplication()
+    fun notifyConfigChanged(project: Project) {
+        project
             .messageBus
             .syncPublisher(topic)
             .onConfigChanged()
