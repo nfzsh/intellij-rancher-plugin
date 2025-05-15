@@ -7,7 +7,7 @@ changelog = "2.2.1"
 intelliJPlatform = "2.4.0"
 kotlin = "2.1.20"
 kover = "0.9.1"
-qodana = "2024.2.3"
+qodana = "2025.1.1"
 okhttp = "4.12.0"
 
 [libraries]
