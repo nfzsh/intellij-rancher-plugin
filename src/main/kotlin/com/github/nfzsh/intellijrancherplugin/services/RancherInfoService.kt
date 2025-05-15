@@ -6,19 +6,24 @@ import com.github.nfzsh.intellijrancherplugin.listeners.ConfigChangeNotifier
 import com.github.nfzsh.intellijrancherplugin.settings.Settings
 import com.intellij.execution.ui.ConsoleView
 import com.intellij.execution.ui.ConsoleViewContentType
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Disposer
 import com.intellij.terminal.JBTerminalWidget
 import com.intellij.ui.content.Content
 import com.intellij.ui.content.ContentManager
-import com.jediterm.core.util.TermSize
+import com.intellij.util.Alarm
+//import com.jediterm.core.util.TermSize
+import com.jediterm.terminal.Questioner
 import com.jediterm.terminal.TtyConnector
 import java.time.LocalDateTime
 import okhttp3.*
 import okhttp3.RequestBody.Companion.toRequestBody
 import okio.ByteString
+import java.awt.Dimension
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
 import java.security.KeyManagementException
@@ -30,6 +35,7 @@ import java.time.ZoneId
 import java.util.*
 import javax.net.ssl.SSLContext
 import javax.net.ssl.X509TrustManager
+import javax.swing.SwingUtilities
 
 /**
  *
@@ -37,13 +43,14 @@ import javax.net.ssl.X509TrustManager
  * @since 2024/12/24 17:16
  */
 @Service(Service.Level.PROJECT)
-class RancherInfoService(private val project: Project) {
+class RancherInfoService(private val project: Project) : Disposable {
 
     /**
      * 集群信息
      * @return cluster, project, namespace
      */
     var basicInfo: MutableList<Triple<String, String, String>> = getInfo()
+    private val refreshAlarm = Alarm(Alarm.ThreadToUse.POOLED_THREAD, this)
 
     init {
         // 订阅配置更改事件
@@ -53,8 +60,18 @@ class RancherInfoService(private val project: Project) {
                 basicInfo = getInfo()
             }
         })
+        startAutoRefresh()
     }
-    private fun getInfo(): MutableList<Triple<String, String, String>> {
+
+    private fun startAutoRefresh(intervalMillis: Long = 60_000L) {
+        refreshAlarm.cancelAllRequests()
+        refreshAlarm.addRequest({
+            getInfo()
+            startAutoRefresh(intervalMillis)
+        }, intervalMillis)
+    }
+
+    fun getInfo(): MutableList<Triple<String, String, String>> {
         val list: Any? = getData("/v3/projects")
         val info: MutableList<Triple<String, String, String>> = mutableListOf()
         if (list is List<*>) {
@@ -69,6 +86,7 @@ class RancherInfoService(private val project: Project) {
                 }
             }
         }
+        basicInfo = info
         return info
     }
 
@@ -146,9 +164,9 @@ class RancherInfoService(private val project: Project) {
     }
 
     fun createWebSocketTtyConnector(
-        terminalWidget: JBTerminalWidget,
+        terminalWidget: JBTerminalWidget?,
         contentManager: ContentManager,
-        content: Content,
+        content: Content?,
         basicInfo: Triple<String, String, String>,
         deploymentName: String,
         podName: String
@@ -202,8 +220,8 @@ class RancherInfoService(private val project: Project) {
                 Thread.sleep(2000)
                 isConnected = false
                 ApplicationManager.getApplication().invokeLater {
-                    terminalWidget.close()
-                    contentManager.removeContent(content, true) // true 表示销毁资源
+                    terminalWidget?.close()
+                    content?.let { contentManager.removeContent(it, true) } // true 表示销毁资源
                 }
             }
         })
@@ -219,10 +237,19 @@ class RancherInfoService(private val project: Project) {
                 return bytesRead
             }
 
-            override fun resize(terminalSize: TermSize) {
+//            override fun resize(terminalSize: TermSize) {
+//                // 远程服务器需要调整终端大小，可以在这里发送相关命令
+//                // {"Width":163,"Height":25}
+//                val resizeMessage = "{\"Width\":${terminalSize.columns},\"Height\":${terminalSize.rows}}"
+//                val base64Data = Base64.getEncoder().encodeToString(resizeMessage.toByteArray())
+//                val message = "4$base64Data" // '4' 表示 resize 事件通道
+//                webSocket.send(message)
+//            }
+
+            override fun resize(terminalSize: Dimension) {
                 // 远程服务器需要调整终端大小，可以在这里发送相关命令
                 // {"Width":163,"Height":25}
-                val resizeMessage = "{\"Width\":${terminalSize.columns},\"Height\":${terminalSize.rows}}"
+                val resizeMessage = "{\"Width\":${terminalSize.width},\"Height\":${terminalSize.height}}"
                 val base64Data = Base64.getEncoder().encodeToString(resizeMessage.toByteArray())
                 val message = "4$base64Data" // '4' 表示 resize 事件通道
                 webSocket.send(message)
@@ -238,6 +265,10 @@ class RancherInfoService(private val project: Project) {
                 val base64Data = Base64.getEncoder().encodeToString(string.toByteArray())
                 val message = "0$base64Data" // '0' 表示 stdin 通道
                 webSocket.send(message)
+            }
+
+            override fun init(p0: Questioner?): Boolean {
+                return true
             }
 
             override fun close() {
@@ -293,6 +324,7 @@ class RancherInfoService(private val project: Project) {
         }
         return pods
     }
+
     companion object {
         @JvmStatic
         fun getTokenExpiredTime(host: String, apiKey: String): LocalDateTime? {
@@ -317,8 +349,9 @@ class RancherInfoService(private val project: Project) {
             }
             return null
         }
+
         private fun getData(url: String, host: String, apiKey: String): Any? {
-            if(host.isEmpty() || apiKey.isEmpty()) {
+            if (host.isEmpty() || apiKey.isEmpty()) {
                 return null
             }
             val client = createUnsafeOkHttpClient()
@@ -333,7 +366,7 @@ class RancherInfoService(private val project: Project) {
                 println("Error: ${e.message}")
                 throw IllegalArgumentException("Error: ${e.message}")
             }
-            if(response.code != 200) {
+            if (response.code != 200) {
                 throw IllegalArgumentException("Error: ${response.code}")
             }
             val res = response.body?.string() ?: throw IllegalArgumentException("Data is null")
@@ -341,6 +374,7 @@ class RancherInfoService(private val project: Project) {
             val data = mapper.readValue(res, Map::class.java)
             return data["data"]
         }
+
         private fun createUnsafeOkHttpClient(): OkHttpClient {
             val trustAllCertificates = object : X509TrustManager {
                 @Throws(CertificateException::class)
@@ -372,6 +406,7 @@ class RancherInfoService(private val project: Project) {
                 .build()
 
         }
+
         private fun getMapper(): ObjectMapper {
             return ObjectMapper()
         }
@@ -405,9 +440,12 @@ class RancherInfoService(private val project: Project) {
     }
 
 
-
     private fun getData(url: String): Any? {
         val setting = getSetting()
         return getData(url, setting.first, setting.second)
+    }
+
+    override fun dispose() {
+        refreshAlarm.cancelAllRequests()
     }
 }

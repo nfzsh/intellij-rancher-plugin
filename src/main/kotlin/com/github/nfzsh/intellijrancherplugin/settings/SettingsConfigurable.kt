@@ -134,11 +134,11 @@ class SettingsConfigurable(private val project: Project) : Configurable {
     }
 
     override fun apply() {
-        val success = validateConfiguration()
-        if(!success) {
-            Messages.showErrorDialog("This is an error message", "Rancher Setting")
+//        val success = validateConfiguration()
+//        if(!success) {
+//            Messages.showErrorDialog("This is an error message", "Rancher Setting")
 //            return
-        }
+//        }
         // 保存用户输入的配置
         val globalSettings = GlobalSettings.instance
         globalSettings.rancherHost = globalRancherHost.text

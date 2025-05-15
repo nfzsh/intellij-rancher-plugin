@@ -17,16 +17,23 @@ import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.terminal.JBTerminalSystemSettingsProviderBase
 import com.intellij.terminal.JBTerminalWidget
+import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.content.ContentManagerEvent
 import com.intellij.ui.content.ContentManagerListener
 import com.intellij.ui.treeStructure.Tree
+import com.intellij.util.ui.JBEmptyBorder
 import com.intellij.util.ui.UIUtil
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
+import net.miginfocom.swing.MigLayout
 import java.awt.BorderLayout
-import java.awt.FlowLayout
 import javax.swing.*
 import javax.swing.tree.DefaultMutableTreeNode
+import javax.swing.tree.DefaultTreeModel
 import javax.swing.tree.TreeSelectionModel
 
 class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
@@ -42,6 +49,11 @@ class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
 
     private val rancherInfoService = RancherInfoService(project)
     private val remoteToolWindow = ToolWindowManager.getInstance(project).getToolWindow("Remote")
+    val statusLabel = JLabel("Ready").apply {
+        horizontalAlignment = SwingConstants.LEFT
+        border = JBEmptyBorder(5, 10, 5, 10)
+        foreground = JBColor.GREEN
+    }
     private val contentPanel = JPanel(BorderLayout())
 
     init {
@@ -87,19 +99,22 @@ class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     private fun setupLayout() {
-        val buttonPanel = JPanel(FlowLayout(FlowLayout.LEFT, 10, 10)).apply {
-            border = BorderFactory.createEmptyBorder(10, 10, 10, 10)
+        val buttonPanel = JPanel(MigLayout("insets 10", "[]10[]10[]10[]")).apply {
             background = UIUtil.getPanelBackground()
             add(refreshCancelButton)
             add(redeployButton)
             add(remoteLogButton)
             add(remoteShellButton)
         }
-
+        val scrollPane = JBScrollPane(buttonPanel).apply {
+            horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
+            verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_NEVER
+            border = null
+        }
         contentPanel.add(JLabel("Loading...", SwingConstants.CENTER), BorderLayout.CENTER)
-
+        add(statusLabel, BorderLayout.NORTH)
         add(contentPanel, BorderLayout.CENTER)
-        add(buttonPanel, BorderLayout.SOUTH)
+        add(scrollPane, BorderLayout.SOUTH)
     }
 
     private fun subscribeToConfigChanges() {
@@ -111,12 +126,11 @@ class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     private fun reloadContent() {
-        contentPanel.removeAll()
-        contentPanel.add(JLabel("Loading...", SwingConstants.CENTER), BorderLayout.CENTER)
-        contentPanel.revalidate()
-        contentPanel.repaint()
+        // 1. 设置状态为 Loading
+        statusLabel.text = "Loading..."
 
         if (!rancherInfoService.checkReady()) {
+            statusLabel.text = "Error"
             Messages.showErrorDialog(project, "Please check your settings", "Error")
             return
         }
@@ -133,21 +147,25 @@ class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
 
             override fun done() {
                 try {
+                    val newContent = get()
                     contentPanel.removeAll()
-                    contentPanel.add(get(), BorderLayout.CENTER)
+                    contentPanel.add(newContent, BorderLayout.CENTER)
+
                     redeployButton.isVisible = true
                     remoteLogButton.isVisible = true
                     remoteShellButton.isVisible = true
+
+                    statusLabel.text = "Ready"
                 } catch (e: Exception) {
-                    contentPanel.removeAll()
-                    contentPanel.add(JLabel("Failed to load content.", SwingConstants.CENTER), BorderLayout.CENTER)
+                    statusLabel.text = "Failed"
+                    Messages.showErrorDialog(project, "Failed to reload content: ${e.message}", "Error")
                 } finally {
                     refreshCancelButton.text = "Refresh"
                     refreshCancelButton.icon = AllIcons.Actions.Refresh
                     refreshCancelButton.isEnabled = true
+                    contentPanel.revalidate()
+                    contentPanel.repaint()
                 }
-                contentPanel.revalidate()
-                contentPanel.repaint()
             }
         }
 
@@ -157,22 +175,37 @@ class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
 
         refreshCancelButton.text = "Cancel"
         refreshCancelButton.icon = AllIcons.Actions.Cancel
+        refreshCancelButton.isEnabled = true
         worker.execute()
     }
 
     private fun createTree(): Tree {
         val basicInfos = rancherInfoService.basicInfo
         val rootNode = DefaultMutableTreeNode("Projects")
-        basicInfos.forEach {
-            val namespaceNode = DefaultMutableTreeNode(it.third)
-            rootNode.add(namespaceNode)
-            rancherInfoService.getDeployments(it.second).forEach { deployment ->
-                val deploymentNode = DefaultMutableTreeNode(deployment)
-                namespaceNode.add(deploymentNode)
-                rancherInfoService.getPodNames(it, deployment).forEach { pod ->
-                    deploymentNode.add(DefaultMutableTreeNode(pod))
+        runBlocking {
+            val namespaceNodes = basicInfos.map { info ->
+                async(Dispatchers.IO) {
+                    val (cluster, projectId, namespace) = info
+                    val namespaceNode = DefaultMutableTreeNode(namespace)
+
+                    val deployments = rancherInfoService.getDeployments(projectId)
+                    val deploymentNodes = deployments.map { deployment ->
+                        async(Dispatchers.IO) {
+                            val deploymentNode = DefaultMutableTreeNode(deployment)
+                            val podNames = rancherInfoService.getPodNames(info, deployment)
+                            podNames.forEach { pod ->
+                                deploymentNode.add(DefaultMutableTreeNode(pod))
+                            }
+                            deploymentNode
+                        }
+                    }.awaitAll()
+
+                    deploymentNodes.forEach { namespaceNode.add(it) }
+                    namespaceNode
                 }
-            }
+            }.awaitAll()
+
+            namespaceNodes.forEach { rootNode.add(it) }
         }
         return Tree(rootNode).apply {
             selectionModel.selectionMode = TreeSelectionModel.SINGLE_TREE_SELECTION
@@ -181,18 +214,21 @@ class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
                     3 -> {
                         deploymentName = event.path.lastPathComponent.toString()
                         val namespace = event.path.parentPath.lastPathComponent.toString()
-                        val projectId = basicInfos.find { it.third == namespace }?.second ?: return@addTreeSelectionListener
+                        val projectId =
+                            basicInfos.find { it.third == namespace }?.second ?: return@addTreeSelectionListener
                         val cluster = projectId.split(":").getOrNull(0) ?: ""
                         basicInfo = Triple(cluster, projectId, namespace)
                         redeployButton.isEnabled = true
                         remoteLogButton.isEnabled = false
                         remoteShellButton.isEnabled = false
                     }
+
                     4 -> {
                         podName = event.path.lastPathComponent.toString()
                         deploymentName = event.path.parentPath.lastPathComponent.toString()
                         val namespace = event.path.parentPath.parentPath.lastPathComponent.toString()
-                        val projectId = basicInfos.find { it.third == namespace }?.second ?: return@addTreeSelectionListener
+                        val projectId =
+                            basicInfos.find { it.third == namespace }?.second ?: return@addTreeSelectionListener
                         val cluster = projectId.split(":").getOrNull(0) ?: ""
                         basicInfo = Triple(cluster, projectId, namespace)
                         redeployButton.isEnabled = false
@@ -214,9 +250,10 @@ class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
 
     private fun handleRemoteLog() {
         val consoleView = TextConsoleBuilderFactory.getInstance().createBuilder(project).console
-        val logContent = ContentFactory.getInstance().createContent(consoleView.component, "console_$podName", false).apply {
-            isCloseable = true
-        }
+        val logContent =
+            ContentFactory.SERVICE.getInstance().createContent(consoleView.component, "console_$podName", false).apply {
+                isCloseable = true
+            }
         remoteToolWindow?.apply {
             contentManager.addContent(logContent)
             contentManager.setSelectedContent(logContent)
@@ -236,9 +273,11 @@ class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
         val terminalSettingsProvider = JBTerminalSystemSettingsProviderBase()
         val parentDisposable = Disposer.newDisposable("ShellDisposable_$podName")
         val terminalWidget = JBTerminalWidget(project, terminalSettingsProvider, parentDisposable)
-        val shellContent = ContentFactory.getInstance().createContent(terminalWidget.component, "shell_$podName", false).apply {
-            isCloseable = true
-        }
+        val shellContent =
+            ContentFactory.SERVICE.getInstance().createContent(terminalWidget.component, "shell_$podName", false)
+                .apply {
+                    isCloseable = true
+                }
         val connector = rancherInfoService.createWebSocketTtyConnector(
             terminalWidget,
             remoteToolWindow?.contentManager!!,
