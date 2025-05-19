@@ -104,7 +104,9 @@ intellijPlatform {
 
     pluginVerification {
         ides {
-            recommended()
+//            recommended()
+            // 旧版本暂时交给本地验证 action空间不足
+            ide("IC-233.14015.106")
         }
     }
 }
