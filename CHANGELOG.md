@@ -34,3 +34,36 @@
 ### Known Issues
 - Remote shell connection may occasionally time out due to network latency.
 - 由于网络延迟，远程 Shell 连接偶尔会超时。
+
+## [1.1.0] - 2025-05-19
+
+### Fixed
+- Fixed shell Chinese character encoding issue.
+- 修复了shell中的中文字符乱码问题。
+- Resolved compatibility and duplicate registration issues.
+- 解决了兼容性问题和重复注册问题。
+- Fixed multi-project conflict issue.
+- 修复了多project冲突问题。
+- Fixed data asynchronous processing issue.
+- 修复了数据异步处理的问题。
+
+### Added
+- Optimized display logic, refresh display, and speed, supports dynamic namespace update.
+- 优化了展示逻辑、刷新展示和刷新速度，支持动态更新namespace。
+- Added clear functionality.
+- 添加了清除功能。
+- Enhanced description information.
+- 增强了描述信息。
+- UI improvements including multiple user interface enhancements.
+- UI改进，包括多项用户界面增强功能。
+
+### Changed
+- Upgraded several dependencies including:
+- 升级了多个依赖项，包括但不限于：
+    - JetBrains/qodana-action to 2024.3
+    - gradle/actions to 4
+    - codecov/codecov-action to 5
+    - org.gradle.toolchains.foojay-resolver-convention to 0.9.0
+    - org.jetbrains.kotlinx.kover to 0.9.1
+    - org.jetbrains.kotlin.jvm to 2.1.20
+    - org.jetbrains.intellij.platform to 2.4.0
