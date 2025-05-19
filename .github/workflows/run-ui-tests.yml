@@ -1,18 +1,8 @@
-# GitHub Actions Workflow for launching UI tests on Linux, Windows, and Mac in the following steps:
-# - Prepare and launch IDE with your plugin and robot-server plugin, which is needed to interact with the UI.
-# - Wait for IDE to start.
-# - Run UI tests with a separate Gradle task.
-#
-# Please check https://github.com/JetBrains/intellij-ui-test-robot for information about UI tests with IntelliJ Platform.
-#
-# Workflow is triggered manually.
-
 name: Run UI Tests
 on:
   workflow_dispatch
 
 jobs:
-
   testUI:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -23,34 +13,51 @@ jobs:
             runIde: |
               export DISPLAY=:99.0
               Xvfb -ac :99 -screen 0 1920x1080x16 &
-              gradle runIdeForUiTests &
+              ./gradlew runIdeForUiTests &
           - os: windows-latest
             runIde: start gradlew.bat runIdeForUiTests
           - os: macos-latest
             runIde: ./gradlew runIdeForUiTests &
 
     steps:
+      # ⚠️ 清理磁盘缓存，释放空间（最关键步骤）
+      - name: Free up disk space
+        if: runner.os == 'Linux'
+        run: |
+          echo "Freeing up disk space..."
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/lib/jvm
+          sudo docker system prune -af
+          df -h
 
-      # Check out the current repository
       - name: Fetch Sources
         uses: actions/checkout@v4
 
-      # Set up Java environment for the next steps
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: zulu
           java-version: 11
 
-      # Setup Gradle
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # Run IDEA prepared for UI testing
+      # Gradle 缓存，避免每次都重新下载 IDEA 安装包
+      - name: Gradle cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
       - name: Run IDE
         run: ${{ matrix.runIde }}
 
-      # Wait for IDEA to be started
       - name: Health Check
         uses: jtalk/url-health-check-action@v4
         with:
@@ -58,6 +65,5 @@ jobs:
           max-attempts: 15
           retry-delay: 30s
 
-      # Run tests
       - name: Tests
         run: ./gradlew test
