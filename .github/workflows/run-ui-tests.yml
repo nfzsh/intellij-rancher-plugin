@@ -47,7 +47,7 @@ jobs:
 
       # Gradle 缓存，避免每次都重新下载 IDEA 安装包
       - name: Gradle cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
