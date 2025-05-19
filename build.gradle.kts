@@ -106,7 +106,7 @@ intellijPlatform {
         ides {
 //            recommended()
             // 旧版本暂时交给本地验证 action空间不足
-            ide("IC-233.14015.106")
+            ide("IC-233.15619.7")
         }
     }
 }
