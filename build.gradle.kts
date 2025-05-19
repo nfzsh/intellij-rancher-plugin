@@ -101,14 +101,12 @@ intellijPlatform {
         // https://plugins.jetbrains.com/docs/intellij/deployment.html#specifying-a-release-channel
         channels = providers.gradleProperty("pluginVersion").map { listOf(it.substringAfter('-', "").substringBefore('.').ifEmpty { "default" }) }
     }
-
-    pluginVerification {
-        ides {
+        // 内存限制等原因 不在action验证 暂时本地验证及idea插件平台验证
+//    pluginVerification {
+//        ides {
 //            recommended()
-            // 旧版本暂时交给本地验证 action空间不足
-            ide("IC-233.15619.7")
-        }
-    }
+//        }
+//    }
 }
 
 // Configure Gradle Changelog Plugin - read more: https://github.com/JetBrains/gradle-changelog-plugin
