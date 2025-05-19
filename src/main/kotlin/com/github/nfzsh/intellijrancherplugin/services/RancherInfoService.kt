@@ -22,6 +22,8 @@ import okhttp3.*
 import okhttp3.RequestBody.Companion.toRequestBody
 import okio.ByteString
 import java.awt.Dimension
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
 import java.security.KeyManagementException
@@ -71,17 +73,21 @@ class RancherInfoService(private val project: Project) : Disposable {
     fun getInfo(): MutableList<Triple<String, String, String>> {
         val list: Any? = getData("/v3/projects")
         val info: MutableList<Triple<String, String, String>> = mutableListOf()
-        if (list is List<*>) {
-            list.forEach { item ->
-                if (item is Map<*, *>) {
-                    val projectId = item["id"]
-                    if (projectId is String) {
-                        val cluster = projectId.split(":")[0]
-                        val namespaces = getNameSpace(cluster, projectId)
-                        namespaces.forEach { info.add(Triple(cluster, projectId, it)) }
+        try {
+            if (list is List<*>) {
+                list.forEach { item ->
+                    if (item is Map<*, *>) {
+                        val projectId = item["id"]
+                        if (projectId is String) {
+                            val cluster = projectId.split(":")[0]
+                            val namespaces = getNameSpace(cluster, projectId)
+                            namespaces.forEach { info.add(Triple(cluster, projectId, it)) }
+                        }
                     }
                 }
             }
+        } catch (e: Exception) {
+            thisLogger().warn("获取集群信息失败", e)
         }
         basicInfo = info
         return info
@@ -224,14 +230,10 @@ class RancherInfoService(private val project: Project) : Disposable {
         })
 
         return object : TtyConnector {
+            val reader = InputStreamReader(inputPipe, Charsets.UTF_8)
+            val bufferedReader = BufferedReader(reader)
             override fun read(buf: CharArray, offset: Int, length: Int): Int {
-                val byteBuffer = ByteArray(length)
-                val bytesRead = inputPipe.read(byteBuffer, 0, length)
-                if (bytesRead > 0) {
-                    val chars = String(byteBuffer, 0, bytesRead, Charsets.UTF_8).toCharArray()
-                    System.arraycopy(chars, 0, buf, offset, chars.size)
-                }
-                return bytesRead
+                return bufferedReader.read(buf, offset, length)
             }
 
 //            override fun resize(terminalSize: TermSize) {

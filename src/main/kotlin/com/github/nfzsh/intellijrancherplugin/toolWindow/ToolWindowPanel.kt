@@ -187,7 +187,7 @@ class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
         runBlocking {
             val namespaceNodes = basicInfos.map { info ->
                 async(Dispatchers.IO) {
-                    val (projectId, namespace) = info
+                    val (cluster, projectId, namespace) = info
                     val namespaceNode = DefaultMutableTreeNode(namespace)
 
                     val deployments = rancherInfoService.getDeployments(projectId)
