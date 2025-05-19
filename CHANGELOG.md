@@ -56,6 +56,8 @@
 - 增强了描述信息。
 - UI improvements including multiple user interface enhancements.
 - UI改进，包括多项用户界面增强功能。
+- Supported versions as far back as 2021.1.
+- 支持最早到2021.1的版本。
 
 ### Changed
 - Upgraded several dependencies including:
