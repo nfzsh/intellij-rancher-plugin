@@ -5,14 +5,16 @@ junit = "4.13.2"
 # plugins
 changelog = "2.2.1"
 intelliJPlatform = "2.4.0"
-kotlin = "2.1.20"
+kotlin = "1.9.25"
 kover = "0.9.1"
 qodana = "2024.2.3"
 okhttp = "4.12.0"
+coroutines = "1.7.3"
 
 [libraries]
 junit = { group = "junit", name = "junit", version.ref = "junit" }
-okhttp= { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+coroutines = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
 
 [plugins]
 changelog = { id = "org.jetbrains.changelog", version.ref = "changelog" }

@@ -33,7 +33,6 @@ import net.miginfocom.swing.MigLayout
 import java.awt.BorderLayout
 import javax.swing.*
 import javax.swing.tree.DefaultMutableTreeNode
-import javax.swing.tree.DefaultTreeModel
 import javax.swing.tree.TreeSelectionModel
 
 class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
@@ -46,7 +45,7 @@ class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val remoteLogButton = JButton("Remote Log")
     private val remoteShellButton = JButton("Remote Shell")
     private val refreshCancelButton = JButton("Refresh")
-
+    private var currentWorker: SwingWorker<JPanel, Void>? = null
     private val rancherInfoService = RancherInfoService(project)
     private val remoteToolWindow = ToolWindowManager.getInstance(project).getToolWindow("Remote")
     val statusLabel = JLabel("Ready").apply {
@@ -64,6 +63,13 @@ class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
         setupLayout()
         subscribeToConfigChanges()
         reloadContent()
+        refreshCancelButton.addActionListener {
+            if (currentWorker?.isDone == false) {
+                currentWorker?.cancel(true)
+            } else {
+                reloadContent()
+            }
+        }
     }
 
     private fun setupButtons() {
@@ -169,10 +175,6 @@ class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
             }
         }
 
-        refreshCancelButton.addActionListener {
-            if (!worker.isDone) worker.cancel(true) else reloadContent()
-        }
-
         refreshCancelButton.text = "Cancel"
         refreshCancelButton.icon = AllIcons.Actions.Cancel
         refreshCancelButton.isEnabled = true
@@ -185,7 +187,7 @@ class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
         runBlocking {
             val namespaceNodes = basicInfos.map { info ->
                 async(Dispatchers.IO) {
-                    val (cluster, projectId, namespace) = info
+                    val (projectId, namespace) = info
                     val namespaceNode = DefaultMutableTreeNode(namespace)
 
                     val deployments = rancherInfoService.getDeployments(projectId)

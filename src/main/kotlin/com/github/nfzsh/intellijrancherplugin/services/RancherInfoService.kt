@@ -11,12 +11,10 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.Disposer
 import com.intellij.terminal.JBTerminalWidget
 import com.intellij.ui.content.Content
 import com.intellij.ui.content.ContentManager
 import com.intellij.util.Alarm
-//import com.jediterm.core.util.TermSize
 import com.jediterm.terminal.Questioner
 import com.jediterm.terminal.TtyConnector
 import java.time.LocalDateTime
@@ -35,7 +33,6 @@ import java.time.ZoneId
 import java.util.*
 import javax.net.ssl.SSLContext
 import javax.net.ssl.X509TrustManager
-import javax.swing.SwingUtilities
 
 /**
  *
