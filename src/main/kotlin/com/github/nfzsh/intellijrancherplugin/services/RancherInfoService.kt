@@ -15,8 +15,7 @@ import com.intellij.terminal.JBTerminalWidget
 import com.intellij.ui.content.Content
 import com.intellij.ui.content.ContentManager
 import com.intellij.util.Alarm
-import com.jediterm.terminal.Questioner
-import com.jediterm.terminal.TtyConnector
+import com.jediterm.terminal.*
 import java.time.LocalDateTime
 import okhttp3.*
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -266,6 +265,7 @@ class RancherInfoService(private val project: Project) : Disposable {
                 webSocket.send(message)
             }
 
+            @Suppress("removal")
             override fun init(p0: Questioner?): Boolean {
                 return true
             }

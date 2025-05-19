@@ -7,6 +7,7 @@ import com.intellij.ui.content.ContentFactory
 
 class MyToolWindowFactory : ToolWindowFactory {
 
+    @Suppress("removal")
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         val panel = ToolWindowPanel(project)
         val content = ContentFactory.SERVICE.getInstance().createContent(panel, null, false)

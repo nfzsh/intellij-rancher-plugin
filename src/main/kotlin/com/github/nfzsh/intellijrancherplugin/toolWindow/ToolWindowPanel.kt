@@ -250,6 +250,7 @@ class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
         }
     }
 
+    @Suppress("removal")
     private fun handleRemoteLog() {
         val consoleView = TextConsoleBuilderFactory.getInstance().createBuilder(project).console
         val logContent =
@@ -271,6 +272,7 @@ class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
         }
     }
 
+    @Suppress("removal")
     private fun handleRemoteShell() {
         val terminalSettingsProvider = JBTerminalSystemSettingsProviderBase()
         val parentDisposable = Disposer.newDisposable("ShellDisposable_$podName")
