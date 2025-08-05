@@ -5,12 +5,16 @@ package com.github.nfzsh.intellijrancherplugin.toolWindow
  * @author 祝世豪
  * @since 2025/5/12 19:40
  */
+import com.github.nfzsh.intellijrancherplugin.MyBundle
+import com.github.nfzsh.intellijrancherplugin.actions.*
 import com.github.nfzsh.intellijrancherplugin.listeners.ConfigChangeListener
 import com.github.nfzsh.intellijrancherplugin.listeners.ConfigChangeNotifier
+import com.github.nfzsh.intellijrancherplugin.listeners.RancherDataLoadedListener
+import com.github.nfzsh.intellijrancherplugin.listeners.RancherDataLoadedNotifier
 import com.github.nfzsh.intellijrancherplugin.services.RancherInfoService
 import com.intellij.execution.filters.TextConsoleBuilderFactory
-import com.intellij.icons.AllIcons
-import com.intellij.openapi.diagnostic.thisLogger
+import com.intellij.openapi.Disposable
+import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.Disposer
@@ -18,109 +22,93 @@ import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.terminal.JBTerminalSystemSettingsProviderBase
 import com.intellij.terminal.JBTerminalWidget
 import com.intellij.ui.JBColor
+import com.intellij.ui.PopupHandler
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.content.ContentManagerEvent
 import com.intellij.ui.content.ContentManagerListener
 import com.intellij.ui.treeStructure.Tree
 import com.intellij.util.ui.JBEmptyBorder
-import com.intellij.util.ui.UIUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
-import net.miginfocom.swing.MigLayout
 import java.awt.BorderLayout
 import javax.swing.*
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.TreeSelectionModel
 
-class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
+class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()), Disposable {
 
     private var basicInfo: Triple<String, String, String>? = null
     private var deploymentName = ""
     private var podName = ""
 
-    private val redeployButton = JButton("Redeploy")
-    private val remoteLogButton = JButton("Remote Log")
-    private val remoteShellButton = JButton("Remote Shell")
-    private val refreshCancelButton = JButton("Refresh")
     private var currentWorker: SwingWorker<JPanel, Void>? = null
-    private val rancherInfoService = RancherInfoService(project)
+    private val rancherInfoService = project.getService(RancherInfoService::class.java)
     private val remoteToolWindow = ToolWindowManager.getInstance(project).getToolWindow("Remote")
-    val statusLabel = JLabel("Ready").apply {
+    private val actionManager = RancherActionManager.getInstance(project)
+    val statusLabel = JLabel(MyBundle.message("ready")).apply {
         horizontalAlignment = SwingConstants.LEFT
         border = JBEmptyBorder(5, 10, 5, 10)
         foreground = JBColor.GREEN
     }
     private val contentPanel = JPanel(BorderLayout())
 
+    // Action实例
+    private val refreshAction = RefreshAction { reloadContent() }
+    private val redeployAction = RedeployAction { handleRedeploy() }
+    private val remoteLogAction = RemoteLogAction { handleRemoteLog() }
+    private val remoteShellAction = RemoteShellAction { handleRemoteShell() }
+    private val editDeploymentAction = EditDeploymentAction { handleEditDeployment() }
+    override fun dispose() {
+    }
     init {
-        thisLogger().warn("Initialized ToolWindowPanel for project: ${project.name}")
+        // 初始化时禁用所有操作按钮
+        redeployAction.setEnabled(false)
+        remoteLogAction.setEnabled(false)
+        remoteShellAction.setEnabled(false)
+        editDeploymentAction.setEnabled(false)
+        rancherInfoService.ensureLoaded()
 
         // 初始化 UI
-        setupButtons()
         setupLayout()
         subscribeToConfigChanges()
-        reloadContent()
-        refreshCancelButton.addActionListener {
-            if (currentWorker?.isDone == false) {
-                currentWorker?.cancel(true)
-            } else {
-                reloadContent()
-            }
-        }
+        // 监听 RancherInfoService 初始化完成事件
+        project.messageBus.connect(this)
+            .subscribe(RancherDataLoadedNotifier.TOPIC, object : RancherDataLoadedListener {
+                override fun onDataLoaded() {
+                    reloadContent()
+                }
+            })
     }
 
-    private fun setupButtons() {
-        redeployButton.apply {
-            icon = AllIcons.Actions.Refresh
-            toolTipText = "Redeploy the selected service"
-            isVisible = false
-            isEnabled = false
-            addActionListener { handleRedeploy() }
-        }
-
-        remoteLogButton.apply {
-            icon = AllIcons.Actions.ShowAsTree
-            toolTipText = "View remote logs"
-            isVisible = false
-            isEnabled = false
-            addActionListener { handleRemoteLog() }
-        }
-
-        remoteShellButton.apply {
-            icon = AllIcons.Actions.Execute
-            toolTipText = "Open remote shell"
-            isVisible = false
-            isEnabled = false
-            addActionListener { handleRemoteShell() }
-        }
-
-        refreshCancelButton.apply {
-            icon = AllIcons.Actions.Refresh
-            toolTipText = "Reload content"
-            isEnabled = true
-        }
-    }
+    // 保存ActionToolbar引用以便更新UI
+    private lateinit var toolbar: ActionToolbar
 
     private fun setupLayout() {
-        val buttonPanel = JPanel(MigLayout("insets 10", "[]10[]10[]10[]")).apply {
-            background = UIUtil.getPanelBackground()
-            add(refreshCancelButton)
-            add(redeployButton)
-            add(remoteLogButton)
-            add(remoteShellButton)
+        // 创建顶部工具栏
+        val actionGroup = DefaultActionGroup().apply {
+            add(refreshAction)
+            addSeparator()
+            add(redeployAction)
+            add(editDeploymentAction)
+            add(remoteLogAction)
+            add(remoteShellAction)
+            // 未来可以在这里轻松添加更多按钮
         }
-        val scrollPane = JBScrollPane(buttonPanel).apply {
-            horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
-            verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_NEVER
-            border = null
+
+        toolbar = ActionManager.getInstance().createActionToolbar(
+            ActionPlaces.TOOLBAR, actionGroup, true
+        ).apply {
+            targetComponent = this@ToolWindowPanel
+            setReservePlaceAutoPopupIcon(false)
         }
-        contentPanel.add(JLabel("Loading...", SwingConstants.CENTER), BorderLayout.CENTER)
+
+        contentPanel.add(JLabel(MyBundle.message("loading"), SwingConstants.CENTER), BorderLayout.CENTER)
         add(statusLabel, BorderLayout.NORTH)
         add(contentPanel, BorderLayout.CENTER)
-        add(scrollPane, BorderLayout.SOUTH)
+        add(toolbar.component, BorderLayout.NORTH)
     }
 
     private fun subscribeToConfigChanges() {
@@ -132,12 +120,24 @@ class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     private fun reloadContent() {
-        // 1. 设置状态为 Loading
-        statusLabel.text = "Loading..."
+        // 如果当前有任务在执行，则取消任务
+        if (currentWorker != null && !currentWorker!!.isDone) {
+            currentWorker!!.cancel(true)
+            currentWorker = null
+            // 恢复刷新按钮状态
+            refreshAction.setCancelMode(false)
+            refreshAction.setEnabled(true)
+            toolbar.updateActionsImmediately()
+            statusLabel.text = MyBundle.message("ready")
+            return
+        }
+
+        // 1. 设置状态为加载中
+        statusLabel.text = MyBundle.message("loading_status")
 
         if (!rancherInfoService.checkReady()) {
-            statusLabel.text = "Error"
-            Messages.showErrorDialog(project, "Please check your settings", "Error")
+            statusLabel.text = MyBundle.message("error")
+            Messages.showErrorDialog(project, MyBundle.message("check_settings"), MyBundle.message("error_title"))
             return
         }
 
@@ -153,37 +153,45 @@ class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
 
             override fun done() {
                 try {
-                    val newContent = get()
-                    contentPanel.removeAll()
-                    contentPanel.add(newContent, BorderLayout.CENTER)
+                    if (!isCancelled) {
+                        val newContent = get()
+                        contentPanel.removeAll()
+                        contentPanel.add(newContent, BorderLayout.CENTER)
+                    }
 
-                    redeployButton.isVisible = true
-                    remoteLogButton.isVisible = true
-                    remoteShellButton.isVisible = true
+                    // 更新Action状态
+                    refreshAction.setCancelMode(false)
+                    refreshAction.setEnabled(true)
+                    toolbar.updateActionsImmediately()
 
-                    statusLabel.text = "Ready"
+                    statusLabel.text = MyBundle.message("ready")
                 } catch (e: Exception) {
-                    statusLabel.text = "Failed"
-                    Messages.showErrorDialog(project, "Failed to reload content: ${e.message}", "Error")
+                    statusLabel.text = MyBundle.message("failed")
+                    Messages.showErrorDialog(
+                        project,
+                        MyBundle.message("load_failed", e.message ?: ""),
+                        MyBundle.message("error_title")
+                    )
                 } finally {
-                    refreshCancelButton.text = "Refresh"
-                    refreshCancelButton.icon = AllIcons.Actions.Refresh
-                    refreshCancelButton.isEnabled = true
+                    currentWorker = null
                     contentPanel.revalidate()
                     contentPanel.repaint()
                 }
             }
         }
 
-        refreshCancelButton.text = "Cancel"
-        refreshCancelButton.icon = AllIcons.Actions.Cancel
-        refreshCancelButton.isEnabled = true
+        // 更新刷新按钮为取消按钮
+        refreshAction.setCancelMode(true)
+        refreshAction.setEnabled(true)
+        toolbar.updateActionsImmediately()
+
+        currentWorker = worker
         worker.execute()
     }
 
     private fun createTree(): Tree {
         val basicInfos = rancherInfoService.basicInfo
-        val rootNode = DefaultMutableTreeNode("Projects")
+        val rootNode = DefaultMutableTreeNode(MyBundle.message("projects"))
         runBlocking {
             val namespaceNodes = basicInfos.map { info ->
                 async(Dispatchers.IO) {
@@ -211,6 +219,8 @@ class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
         }
         return Tree(rootNode).apply {
             selectionModel.selectionMode = TreeSelectionModel.SINGLE_TREE_SELECTION
+
+            // 添加树节点选择监听器
             addTreeSelectionListener { event ->
                 when (event.path.pathCount) {
                     3 -> {
@@ -220,9 +230,15 @@ class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
                             basicInfos.find { it.third == namespace }?.second ?: return@addTreeSelectionListener
                         val cluster = projectId.split(":").getOrNull(0) ?: ""
                         basicInfo = Triple(cluster, projectId, namespace)
-                        redeployButton.isEnabled = true
-                        remoteLogButton.isEnabled = false
-                        remoteShellButton.isEnabled = false
+
+                        // 更新Action状态
+                        redeployAction.setEnabled(true)
+                        editDeploymentAction.setEnabled(true)
+                        remoteLogAction.setEnabled(false)
+                        remoteShellAction.setEnabled(false)
+
+                        // 刷新工具栏UI
+                        toolbar.updateActionsImmediately()
                     }
 
                     4 -> {
@@ -233,69 +249,133 @@ class ToolWindowPanel(private val project: Project) : JPanel(BorderLayout()) {
                             basicInfos.find { it.third == namespace }?.second ?: return@addTreeSelectionListener
                         val cluster = projectId.split(":").getOrNull(0) ?: ""
                         basicInfo = Triple(cluster, projectId, namespace)
-                        redeployButton.isEnabled = false
-                        remoteLogButton.isEnabled = true
-                        remoteShellButton.isEnabled = true
+
+                        // 更新Action状态
+                        redeployAction.setEnabled(false)
+                        editDeploymentAction.setEnabled(false)
+                        remoteLogAction.setEnabled(true)
+                        remoteShellAction.setEnabled(true)
+
+                        // 刷新工具栏UI
+                        toolbar.updateActionsImmediately()
+                    }
+
+                    else -> {
+                        deploymentName = ""
+                        podName = ""
+
+                        // 刷新Action状态
+                        redeployAction.setEnabled(false)
+                        editDeploymentAction.setEnabled(false)
+                        remoteLogAction.setEnabled(false)
+                        remoteShellAction.setEnabled(false)
+
+                        // 刷新工具栏UI
+                        toolbar.updateActionsImmediately()
                     }
                 }
+            }
+
+            // 添加右键菜单
+            val popupActionGroup = TreeNodeActionGroup()
+            PopupHandler.installPopupMenu(this, popupActionGroup, ActionPlaces.POPUP)
+        }
+    }
+
+    /**
+     * 处理重新部署
+     */
+    private fun handleRedeploy() {
+        basicInfo?.let {
+            // 直接调用服务方法，不需要传递TreePath
+            if (rancherInfoService.redeploy(deploymentName, it)) {
+                Messages.showInfoMessage(project, MyBundle.message("redeploy_success"), MyBundle.message("success"))
+            } else {
+                Messages.showErrorDialog(project, MyBundle.message("redeploy_failed"), MyBundle.message("error_title"))
             }
         }
     }
 
-    private fun handleRedeploy() {
-        if (rancherInfoService.redeploy(deploymentName, basicInfo!!)) {
-            Messages.showInfoMessage("Redeploy success.", "Success")
-        } else {
-            Messages.showErrorDialog("Redeploy failed.", "Error")
-        }
-    }
-
+    /**
+     * 处理远程日志
+     */
     @Suppress("removal")
     private fun handleRemoteLog() {
-        val consoleView = TextConsoleBuilderFactory.getInstance().createBuilder(project).console
-        val logContent =
-            ContentFactory.SERVICE.getInstance().createContent(consoleView.component, "console_$podName", false).apply {
-                isCloseable = true
-            }
-        remoteToolWindow?.apply {
-            contentManager.addContent(logContent)
-            contentManager.setSelectedContent(logContent)
-            show()
-            val webSocket = rancherInfoService.getLogs(basicInfo!!, deploymentName, podName, consoleView)
-            contentManager.addContentManagerListener(object : ContentManagerListener {
-                override fun contentRemoved(event: ContentManagerEvent) {
-                    if (event.content == logContent) {
-                        webSocket.close(1000, "")
+        basicInfo?.let {
+            // 创建控制台视图并显示日志
+            val consoleView = TextConsoleBuilderFactory.getInstance().createBuilder(project).console
+            val logContent =
+                ContentFactory.SERVICE.getInstance().createContent(consoleView.component, "console_$podName", false)
+                    .apply {
+                        isCloseable = true
                     }
-                }
-            })
+            remoteToolWindow?.apply {
+                contentManager.addContent(logContent)
+                contentManager.setSelectedContent(logContent)
+                show()
+                val webSocket = rancherInfoService.getLogs(it, deploymentName, podName, consoleView)
+                contentManager.addContentManagerListener(object : ContentManagerListener {
+                    override fun contentRemoved(event: ContentManagerEvent) {
+                        if (event.content == logContent) {
+                            webSocket.close(1000, "")
+                        }
+                    }
+                })
+            }
         }
     }
 
+    /**
+     * 处理远程Shell
+     */
     @Suppress("removal")
     private fun handleRemoteShell() {
-        val terminalSettingsProvider = JBTerminalSystemSettingsProviderBase()
-        val parentDisposable = Disposer.newDisposable("ShellDisposable_$podName")
-        val terminalWidget = JBTerminalWidget(project, terminalSettingsProvider, parentDisposable)
-        val shellContent =
-            ContentFactory.SERVICE.getInstance().createContent(terminalWidget.component, "shell_$podName", false)
-                .apply {
-                    isCloseable = true
-                }
-        val connector = rancherInfoService.createWebSocketTtyConnector(
-            terminalWidget,
-            remoteToolWindow?.contentManager!!,
-            shellContent,
-            basicInfo!!,
-            deploymentName,
-            podName
-        )
-        terminalWidget.createTerminalSession(connector)
-        terminalWidget.start(connector)
-        remoteToolWindow.apply {
-            contentManager.addContent(shellContent)
-            contentManager.setSelectedContent(shellContent)
-            show()
+        basicInfo?.let {
+            // 创建终端并连接到远程Shell
+            val terminalSettingsProvider = JBTerminalSystemSettingsProviderBase()
+            val parentDisposable = Disposer.newDisposable("ShellDisposable_$podName")
+            val terminalWidget = JBTerminalWidget(project, terminalSettingsProvider, parentDisposable)
+            val shellContent =
+                ContentFactory.SERVICE.getInstance().createContent(terminalWidget.component, "shell_$podName", false)
+                    .apply {
+                        isCloseable = true
+                    }
+            val connector = rancherInfoService.createWebSocketTtyConnector(
+                terminalWidget,
+                remoteToolWindow?.contentManager!!,
+                shellContent,
+                it,
+                deploymentName,
+                podName
+            )
+            terminalWidget.createTerminalSession(connector)
+            terminalWidget.start(connector)
+            remoteToolWindow.apply {
+                contentManager.addContent(shellContent)
+                contentManager.setSelectedContent(shellContent)
+                show()
+            }
+        }
+    }
+
+    /**
+     * 处理编辑Deployment
+     */
+    private fun handleEditDeployment() {
+        basicInfo?.let {
+            try {
+                // 直接调用服务方法获取Deployment详细信息并打开编辑器
+                val deploymentDetail = rancherInfoService.getDeploymentDetail(it, deploymentName)
+                // 创建编辑器工厂并打开编辑器
+                val deploymentEditorFactory = DeploymentEditorFactory(project)
+                deploymentEditorFactory.openEditor(deploymentDetail, it, deploymentName)
+            } catch (e: Exception) {
+                Messages.showErrorDialog(
+                    project,
+                    e.message ?: MyBundle.message("deployment_load_failed"),
+                    MyBundle.message("deployment_detail_title")
+                )
+            }
         }
     }
 }

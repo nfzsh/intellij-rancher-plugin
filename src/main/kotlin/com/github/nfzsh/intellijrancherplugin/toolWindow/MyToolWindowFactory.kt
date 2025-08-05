@@ -5,6 +5,9 @@ import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.content.ContentFactory
 
+/**
+ * Rancher工具窗口工厂类
+ */
 class MyToolWindowFactory : ToolWindowFactory {
 
     @Suppress("removal")

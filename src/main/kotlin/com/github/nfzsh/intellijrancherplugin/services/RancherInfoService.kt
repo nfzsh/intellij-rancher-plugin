@@ -3,6 +3,7 @@ package com.github.nfzsh.intellijrancherplugin.services
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.nfzsh.intellijrancherplugin.listeners.ConfigChangeListener
 import com.github.nfzsh.intellijrancherplugin.listeners.ConfigChangeNotifier
+import com.github.nfzsh.intellijrancherplugin.listeners.RancherDataLoadedNotifier
 import com.github.nfzsh.intellijrancherplugin.settings.Settings
 import com.intellij.execution.ui.ConsoleView
 import com.intellij.execution.ui.ConsoleViewContentType
@@ -16,114 +17,173 @@ import com.intellij.ui.content.Content
 import com.intellij.ui.content.ContentManager
 import com.intellij.util.Alarm
 import com.jediterm.terminal.*
-import java.time.LocalDateTime
 import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.RequestBody.Companion.toRequestBody
 import okio.ByteString
+import org.yaml.snakeyaml.Yaml
 import java.awt.Dimension
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.io.PipedInputStream
-import java.io.PipedOutputStream
-import java.security.KeyManagementException
-import java.security.NoSuchAlgorithmException
-import java.security.cert.CertificateException
+import java.io.*
 import java.security.cert.X509Certificate
-import java.time.Instant
-import java.time.ZoneId
+import java.time.*
 import java.util.*
 import javax.net.ssl.SSLContext
 import javax.net.ssl.X509TrustManager
 
-/**
- *
- * @author 祝世豪
- * @since 2024/12/24 17:16
- */
 @Service(Service.Level.PROJECT)
 class RancherInfoService(private val project: Project) : Disposable {
 
-    /**
-     * 集群信息
-     * @return cluster, project, namespace
-     */
-    var basicInfo: MutableList<Triple<String, String, String>> = getInfo()
+    // 集群信息缓存
+    @Volatile
+    var basicInfo: MutableList<Triple<String, String, String>> = mutableListOf()
+
     private val refreshAlarm = Alarm(Alarm.ThreadToUse.POOLED_THREAD, this)
 
     init {
-        // 订阅配置更改事件
-        val connection = project.messageBus.connect()
+        // 仅注册配置变更监听器，不立即加载
+        val connection = project.messageBus.connect(this)
         connection.subscribe(ConfigChangeNotifier.topic, object : ConfigChangeListener {
             override fun onConfigChanged() {
-                basicInfo = getInfo()
+                refreshAsync()
             }
         })
-        startAutoRefresh()
     }
 
-    private fun startAutoRefresh(intervalMillis: Long = 60_000L) {
+    /** 懒加载入口：首次调用时触发异步加载 */
+    fun ensureLoaded() {
+        if (basicInfo.isEmpty()) refreshAsync()
+
+    }
+
+    /** 对外暴露刷新接口 */
+    fun refreshAsync() {
         refreshAlarm.cancelAllRequests()
         refreshAlarm.addRequest({
-            getInfo()
+            ApplicationManager.getApplication().executeOnPooledThread {
+                try {
+                    val info = fetchInfoSync()
+                    ApplicationManager.getApplication().invokeLater {
+                        basicInfo = info
+                        // ✅ 发出事件
+                        project.messageBus.syncPublisher(RancherDataLoadedNotifier.TOPIC).onDataLoaded()
+                    }
+                } catch (e: Exception) {
+                    thisLogger().warn("Failed to refresh Rancher info", e)
+                }
+            }
+        }, 0)
+    }
+
+    /** 启动定时刷新（60s），仅在首次成功加载后调用 */
+    fun startAutoRefresh(intervalMillis: Long = 60_000L) {
+        refreshAlarm.cancelAllRequests()
+        refreshAlarm.addRequest({
+            refreshAsync()
             startAutoRefresh(intervalMillis)
         }, intervalMillis)
     }
 
-    fun getInfo(): MutableList<Triple<String, String, String>> {
-        val list: Any? = getData("/v3/projects")
-        val info: MutableList<Triple<String, String, String>> = mutableListOf()
-        try {
-            if (list is List<*>) {
-                list.forEach { item ->
-                    if (item is Map<*, *>) {
-                        val projectId = item["id"]
-                        if (projectId is String) {
-                            val cluster = projectId.split(":")[0]
-                            val namespaces = getNameSpace(cluster, projectId)
-                            namespaces.forEach { info.add(Triple(cluster, projectId, it)) }
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            thisLogger().warn("获取集群信息失败", e)
-        }
-        basicInfo = info
-        return info
-    }
-
-    fun getDeployments(project: String): MutableList<String> {
-        val list: Any? = getData("/v3/project/${project}/deployments")
-        val nameList = mutableListOf<String>()
+    /** 同步获取数据，仅后台线程调用 */
+    private fun fetchInfoSync(): MutableList<Triple<String, String, String>> {
+        val list: Any? = getDataSync("/v3/projects")
+        val result = mutableListOf<Triple<String, String, String>>()
         if (list is List<*>) {
             list.forEach { item ->
                 if (item is Map<*, *>) {
-                    val varList = item["containers"]
-                    if (varList is List<*>) {
-                        varList.forEach { varItem ->
-                            if (varItem is Map<*, *>) {
-                                nameList.add(varItem["name"].toString())
-                            }
-                        }
-                    }
+                    val projectId = item["id"] as? String ?: return@forEach
+                    val cluster = projectId.split(":")[0]
+                    val namespaces = fetchNamespacesSync(cluster, projectId)
+                    namespaces.forEach { result.add(Triple(cluster, projectId, it)) }
                 }
             }
         }
-        return nameList
+        return result
+    }
+
+    private fun fetchNamespacesSync(cluster: String, projectId: String): List<String> {
+        val list: Any? = getDataSync("/v3/clusters/$cluster/namespaces")
+        val ns = mutableListOf<String>()
+        if (list is List<*>) {
+            list.forEach { item ->
+                if (item is Map<*, *>) {
+                    val nsId = item["id"] as? String
+                    if (nsId != null && projectId == item["projectId"]) ns.add(nsId)
+                }
+            }
+        }
+        return ns
+    }
+
+    /* ------------------ 以下为原逻辑，仅改为同步版本 ------------------ */
+
+    fun getDeployments(project: String): MutableList<String> {
+        val list: Any? = getDataSync("/v3/project/$project/deployments")
+        val names = mutableListOf<String>()
+        if (list is List<*>) list.forEach { item ->
+            if (item is Map<*, *>) (item["containers"] as? List<*>)?.forEach { c ->
+                if (c is Map<*, *>) c["name"]?.let { names.add(it.toString()) }
+            }
+        }
+        return names
+    }
+
+    fun getDeploymentDetail(
+        basicInfo: Triple<String, String, String>,
+        deploymentName: String
+    ): String = getYamlDataSync(
+        "/k8s/clusters/${basicInfo.first}/apis/apps/v1/namespaces/${basicInfo.third}/deployments/$deploymentName"
+    ).orEmpty()
+
+    data class DeploymentUpdateResult(
+        val success: Boolean,
+        val content: String,
+        val statusCode: Int
+    )
+
+    fun updateDeployment(
+        basicInfo: Triple<String, String, String>,
+        deploymentName: String,
+        deploymentData: String
+    ): DeploymentUpdateResult {
+        val (host, key) = getSetting()
+        val client = createUnsafeOkHttpClient()
+        val url = "https://${host.trimEnd('/')}/k8s/clusters/${basicInfo.first.trimEnd('/')}/apis/apps/v1/namespaces/${basicInfo.third}/deployments/$deploymentName"
+        val body = deploymentData.toRequestBody("application/yaml; charset=utf-8".toMediaTypeOrNull())
+        val req = Request.Builder().url(url).header("Authorization", key)
+            .header("Content-Type", "application/yaml")
+            .header("Accept", "application/yaml")
+            .put(body).build()
+
+        client.newCall(req).execute().use { resp ->
+            val bodyStr = resp.body?.string().orEmpty()
+            return if (resp.code == 200) DeploymentUpdateResult(true, bodyStr, 200)
+            else DeploymentUpdateResult(false, extractYamlErrorMessage(bodyStr), resp.code)
+        }
     }
 
     fun redeploy(deploymentName: String, basicInfo: Triple<String, String, String>): Boolean {
-        val setting = getSetting()
+        val (host, key) = getSetting()
         val client = createUnsafeOkHttpClient()
-        val request = Request.Builder()
-            .url("https://${setting.first}v3/project/${basicInfo.second}/workloads/deployment:${basicInfo.third}:${deploymentName}?action=redeploy")
-            .header("Authorization", setting.second)
-            .post("".toRequestBody(null))
-            .build()
-        val response = client.newCall(request).execute()
-        return response.code == 200
+        val url = "https://${host.trimEnd('/')}/v3/project/${basicInfo.second}/workloads/deployment:${basicInfo.third}:$deploymentName?action=redeploy"
+        val req = Request.Builder().url(url).header("Authorization", key).post("".toRequestBody(null)).build()
+        return client.newCall(req).execute().code == 200
     }
 
+    fun getPodNames(basicInfo: Triple<String, String, String>, name: String): MutableList<String> {
+        val list: Any? = getDataSync("/v3/project/${basicInfo.second}/pods")
+        val pods = mutableListOf<String>()
+        if (list is List<*>) list.forEach { item ->
+            if (item is Map<*, *>) {
+                val workload = item["workloadId"]
+                if (workload == "deployment:${basicInfo.third}:$name" &&
+                    item["type"] == "pod" && item["state"] == "running"
+                ) {
+                    pods.add(item["name"].toString())
+                }
+            }
+        }
+        return pods
+    }
     fun getLogs(
         basicInfo: Triple<String, String, String>,
         deploymentName: String,
@@ -164,7 +224,6 @@ class RancherInfoService(private val project: Project) : Disposable {
         val webSocket = client.newWebSocket(request, listener)
         return webSocket
     }
-
     fun createWebSocketTtyConnector(
         terminalWidget: JBTerminalWidget?,
         contentManager: ContentManager,
@@ -291,58 +350,63 @@ class RancherInfoService(private val project: Project) : Disposable {
             }
         }
     }
-
-    private fun getNameSpace(cluster: String, projectId: String): MutableList<String> {
-        val list: Any? = getData("/v3/clusters/$cluster/namespaces")
-        val namespaces = mutableListOf<String>()
-        if (list is List<*>) {
-            list.forEach { item ->
-                if (item is Map<*, *>) {
-                    val namespace = item["id"]
-                    if (namespace is String && !namespaces.contains(namespace) && projectId == item["projectId"]) {
-                        namespaces.add(namespace)
-                    }
-                }
-            }
+    fun checkReady(): Boolean {
+        try {
+            val (host, key) = getSetting()
+            Companion.getData("/v3/token", host, key)
+        } catch (e: Exception) {
+            return false
         }
-        return namespaces
+        return true
+    }
+    /* ------------------ 工具方法 ------------------ */
+
+    private fun getSetting(): Pair<String, String> {
+        val settings = Settings(project)
+        val host = settings.rancherHost.takeIf { it.isNotBlank() } ?: ""
+        val key = settings.rancherApiKey.takeIf { it.isNotBlank() } ?: ""
+        return host to key
     }
 
-    fun getPodNames(basicInfo: Triple<String, String, String>, name: String): MutableList<String> {
-        val list: Any? = getData("/v3/project/${basicInfo.second}/pods")
-        val pods = mutableListOf<String>()
-        if (list is List<*>) {
-            list.forEach { item ->
-                if (item is Map<*, *>) {
-                    val workloadId = item["workloadId"]
-                    if (workloadId == "deployment:${basicInfo.third}:${name}" && item["type"] == "pod" && item["state"] == "running") {
-                        pods.add(item["name"].toString())
-                    }
-                }
-            }
-        }
-        return pods
+    private fun getDataSync(url: String): Any? {
+        val (host, key) = getSetting()
+        return Companion.getData(url, host, key)
     }
+
+    private fun getYamlDataSync(url: String): String? {
+        val (host, key) = getSetting()
+        return Companion.getYamlData(url, host, key)
+    }
+
+    private fun extractYamlErrorMessage(yamlText: String): String {
+        val yaml = Yaml()
+        val data = yaml.load<Map<String, Any>>(StringReader(yamlText))
+        val code = data["code"]?.toString() ?: "Unknown"
+        val message = data["message"]?.toString()?.trimIndent() ?: "Unknown error"
+        return "Error $code: $message"
+    }
+
+    override fun dispose() {
+        refreshAlarm.cancelAllRequests()
+    }
+
+    /* ------------------ 静态工具 ------------------ */
 
     companion object {
         @JvmStatic
         fun getTokenExpiredTime(host: String, apiKey: String): LocalDateTime? {
-            if (apiKey.isEmpty() || host.isEmpty()) return null
-            val list: Any?
-            try {
-                list = getData("/v3/token", host, apiKey)
+            if (host.isBlank() || apiKey.isBlank()) return null
+            val list: Any? = try {
+                getData("/v3/token", host, apiKey)
             } catch (e: Exception) {
                 return null
             }
-            val cattleAccessKey = apiKey.replace("Bearer ", "").split(":")[0]
+            val key = apiKey.replace("Bearer ", "").split(":")[0]
             if (list is List<*>) {
                 list.forEach {
-                    if (it is Map<*, *>) {
-                        if (it["id"] == cattleAccessKey) {
-                            val expires = it["expiresAt"] as String
-                            val instant = Instant.parse(expires)
-                            return LocalDateTime.ofInstant(instant, ZoneId.systemDefault())
-                        }
+                    if (it is Map<*, *> && it["id"] == key) {
+                        val exp = it["expiresAt"] as? String ?: return null
+                        return LocalDateTime.ofInstant(Instant.parse(exp), ZoneId.systemDefault())
                     }
                 }
             }
@@ -350,101 +414,48 @@ class RancherInfoService(private val project: Project) : Disposable {
         }
 
         private fun getData(url: String, host: String, apiKey: String): Any? {
-            if (host.isEmpty() || apiKey.isEmpty()) {
-                return null
-            }
+            if (host.isBlank() || apiKey.isBlank()) return null
             val client = createUnsafeOkHttpClient()
-            val request = Request.Builder()
-                .url("https://${host}$url")
+            val req = Request.Builder()
+                .url("https://$host$url")
                 .header("Authorization", apiKey)
                 .get()
                 .build()
-            val response = try {
-                client.newCall(request).execute()
-            } catch (e: Exception) {
-                println("Error: ${e.message}")
-                throw IllegalArgumentException("Error: ${e.message}")
+            return client.newCall(req).execute().use { resp ->
+                if (resp.code != 200) throw IllegalArgumentException("HTTP ${resp.code}")
+                val json = resp.body?.string() ?: throw IllegalArgumentException("Empty body")
+                ObjectMapper().readValue(json, Map::class.java)["data"]
             }
-            if (response.code != 200) {
-                throw IllegalArgumentException("Error: ${response.code}")
+        }
+
+        private fun getYamlData(url: String, host: String, apiKey: String): String? {
+            if (host.isBlank() || apiKey.isBlank()) return null
+            val client = createUnsafeOkHttpClient()
+            val req = Request.Builder()
+                .url("https://$host$url")
+                .header("Authorization", apiKey)
+                .header("Accept", "application/yaml")
+                .get()
+                .build()
+            return client.newCall(req).execute().use { resp ->
+                if (resp.code != 200) throw IllegalArgumentException("HTTP ${resp.code}")
+                resp.body?.string()
             }
-            val res = response.body?.string() ?: throw IllegalArgumentException("Data is null")
-            val mapper = getMapper()
-            val data = mapper.readValue(res, Map::class.java)
-            return data["data"]
         }
 
         private fun createUnsafeOkHttpClient(): OkHttpClient {
-            val trustAllCertificates = object : X509TrustManager {
-                @Throws(CertificateException::class)
-                override fun checkClientTrusted(chain: Array<X509Certificate>?, authType: String?) {
-                }
-
-                @Throws(CertificateException::class)
-                override fun checkServerTrusted(chain: Array<X509Certificate>?, authType: String?) {
-                }
-
+            val trustAll = object : X509TrustManager {
+                override fun checkClientTrusted(c: Array<X509Certificate>?, t: String?) {}
+                override fun checkServerTrusted(c: Array<X509Certificate>?, t: String?) {}
                 override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
             }
-
-            val sslContext: SSLContext = try {
-                SSLContext.getInstance("TLS").apply {
-                    init(null, arrayOf(trustAllCertificates), java.security.SecureRandom())
-                }
-            } catch (e: NoSuchAlgorithmException) {
-                throw RuntimeException("Unable to create SSLContext", e)
-            } catch (e: KeyManagementException) {
-                throw RuntimeException("Unable to initialize SSLContext", e)
+            val ssl = SSLContext.getInstance("TLS").apply {
+                init(null, arrayOf(trustAll), java.security.SecureRandom())
             }
-
-            val sslSocketFactory = sslContext.socketFactory
-
             return OkHttpClient.Builder()
-                .sslSocketFactory(sslSocketFactory, trustAllCertificates)
-                .hostnameVerifier { _, _ -> true }  // 信任所有主机
+                .sslSocketFactory(ssl.socketFactory, trustAll)
+                .hostnameVerifier { _, _ -> true }
                 .build()
-
         }
-
-        private fun getMapper(): ObjectMapper {
-            return ObjectMapper()
-        }
-    }
-
-
-    fun checkReady(): Boolean {
-        try {
-            getData("/v3/token")
-        } catch (e: Exception) {
-            return false
-        }
-        return true
-    }
-
-    private fun getSetting(): Pair<String, String> {
-        val settings = Settings(project)
-        val url: String
-        if (settings.rancherHost.isNotEmpty()) {
-            url = settings.rancherHost
-        } else {
-            return Pair("", "")
-        }
-        val key: String
-        if (settings.rancherApiKey.isNotEmpty()) {
-            key = settings.rancherApiKey
-        } else {
-            return Pair("", "")
-        }
-        return Pair(url, key)
-    }
-
-
-    private fun getData(url: String): Any? {
-        val setting = getSetting()
-        return getData(url, setting.first, setting.second)
-    }
-
-    override fun dispose() {
-        refreshAlarm.cancelAllRequests()
     }
 }

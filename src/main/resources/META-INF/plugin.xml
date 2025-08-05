@@ -95,6 +95,7 @@
     </extensions>
 
     <extensions defaultExtensionNs="com.intellij">
+        <postStartupActivity implementation="com.github.nfzsh.intellijrancherplugin.startup.RancherStartupActivity"/>
         <toolWindow id="Remote"
                     icon="AllIcons.RunConfigurations.Remote"
                     factoryClass="com.github.nfzsh.intellijrancherplugin.toolWindow.LogWindowFactory"
@@ -103,5 +104,9 @@
         <toolWindow factoryClass="com.github.nfzsh.intellijrancherplugin.toolWindow.MyToolWindowFactory"
                     icon="AllIcons.Actions.Compile"
                     id="Rancher Remote Control"/>
+        <editorNotificationProvider
+                implementation="com.github.nfzsh.intellijrancherplugin.actions.DeploymentEditorNotificationProvider"/>
     </extensions>
+
+
 </idea-plugin>

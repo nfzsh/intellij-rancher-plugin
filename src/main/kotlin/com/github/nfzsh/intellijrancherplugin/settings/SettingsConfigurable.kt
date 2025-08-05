@@ -1,5 +1,6 @@
 package com.github.nfzsh.intellijrancherplugin.settings
 
+import com.github.nfzsh.intellijrancherplugin.MyBundle
 import com.github.nfzsh.intellijrancherplugin.listeners.ConfigChangeNotifier
 import com.github.nfzsh.intellijrancherplugin.services.RancherInfoService
 import com.github.nfzsh.intellijrancherplugin.util.SettingUtil
@@ -28,7 +29,7 @@ class SettingsConfigurable(private val project: Project) : Configurable {
     private var mainPanel: JPanel? = null
 
     override fun getDisplayName(): String {
-        return "Rancher Plugin Setting"
+        return MyBundle.message("rancher_setting")
     }
 
     override fun createComponent(): JComponent {
@@ -41,31 +42,31 @@ class SettingsConfigurable(private val project: Project) : Configurable {
         globalMainPanel.layout = GridBagLayout()
         globalMainPanel.border = BorderFactory.createTitledBorder(
             BorderFactory.createEtchedBorder(),
-            "Global Settings",
+            MyBundle.message("global_settings"),
             TitledBorder.LEFT,
             TitledBorder.TOP
         )
 
         // 添加全局配置输入框
-        addLabelAndTextField(globalMainPanel, "Rancher Host:", globalRancherHost, 0)
-        addLabelAndTextField(globalMainPanel, "Rancher API Key:", globalRancherApiKey, 1)
+        addLabelAndTextField(globalMainPanel, MyBundle.message("rancher_host"), globalRancherHost, 0)
+        addLabelAndTextField(globalMainPanel, MyBundle.message("rancher_api_key"), globalRancherApiKey, 1)
 
         // 项目级配置面板
         val projectMainPanel = JPanel()
         projectMainPanel.layout = GridBagLayout()
         projectMainPanel.border = BorderFactory.createTitledBorder(
             BorderFactory.createEtchedBorder(),
-            "Project Settings",
+            MyBundle.message("project_settings"),
             TitledBorder.LEFT,
             TitledBorder.TOP
         )
 
         // 添加项目级配置输入框
-        addLabelAndTextField(projectMainPanel, "Rancher Host:", projectRancherHost, 0)
-        addLabelAndTextField(projectMainPanel, "Rancher API Key:", projectRancherApiKey, 1)
+        addLabelAndTextField(projectMainPanel, MyBundle.message("rancher_host"), projectRancherHost, 0)
+        addLabelAndTextField(projectMainPanel, MyBundle.message("rancher_api_key"), projectRancherApiKey, 1)
 
         // 校验按钮
-        val validateButton = JButton("Validate Configuration")
+        val validateButton = JButton(MyBundle.message("validate_config"))
         validateButton.addActionListener {
             validateConfiguration()
         }
@@ -97,13 +98,13 @@ class SettingsConfigurable(private val project: Project) : Configurable {
         }
         if (isValid) {
             if (date?.isBefore(LocalDateTime.now()) == true) {
-                Messages.showErrorDialog("Token expired", "Rancher Setting")
+                Messages.showErrorDialog(MyBundle.message("token_expired"), MyBundle.message("rancher_setting"))
                 return false
             }
-            Messages.showInfoMessage("Check success", "Rancher Setting")
+            Messages.showInfoMessage(MyBundle.message("check_success"), MyBundle.message("rancher_setting"))
             return true
         } else {
-            Messages.showErrorDialog("This is an error message", "Rancher Setting")
+            Messages.showErrorDialog(MyBundle.message("check_failed"), MyBundle.message("rancher_setting"))
             return false
         }
     }
