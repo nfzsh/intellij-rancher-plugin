@@ -66,9 +66,9 @@ class DeploymentEditorFactory(private val project: Project) {
         if (document != null) {
             val yamlContent = document.text
 
-            ProgressManager.getInstance().run(object : Task.Backgroundable(project, "正在保存Deployment...", false) {
+            ProgressManager.getInstance().run(object : Task.Backgroundable(project, MyBundle.message("saving_deployment"), false) {
                 override fun run(indicator: ProgressIndicator) {
-                    indicator.text = "正在验证YAML格式..."
+                    indicator.text = MyBundle.message("validating_yaml")
                     indicator.fraction = 0.3
 
                     try {
@@ -76,7 +76,7 @@ class DeploymentEditorFactory(private val project: Project) {
                         val yaml = Yaml()
                         yaml.load<Any>(yamlContent)
 
-                        indicator.text = "正在保存到Rancher..."
+                        indicator.text = MyBundle.message("saving_to_rancher")
                         indicator.fraction = 0.7
 
                         // 更新Deployment
@@ -110,14 +110,14 @@ class DeploymentEditorFactory(private val project: Project) {
                         ApplicationManager.getApplication().invokeLater {
                             val result = Messages.showYesNoDialog(
                                 project,
-                                "YAML 格式有误：${e.message}\n\n是否仍要继续保存？",
-                                "YAML 格式错误",
+                                MyBundle.message("yaml_format_error", e.message ?: ""),
+                                MyBundle.message("error_title"),
                                 Messages.getWarningIcon()
                             )
                             if (result == Messages.YES) {
                                 // 强制保存
                                 ProgressManager.getInstance()
-                                    .run(object : Backgroundable(project, "正在强制保存...", false) {
+                                    .run(object : Task.Backgroundable(project, MyBundle.message("force_saving"), false) {
                                         override fun run(indicator: ProgressIndicator) {
                                             val updateInfo = rancherService.updateDeployment(
                                                 basicInfo,
@@ -138,7 +138,7 @@ class DeploymentEditorFactory(private val project: Project) {
                                                     Messages.showErrorDialog(
                                                         project,
                                                         updateInfo.content,
-                                                        MyBundle.message("error")
+                                                        MyBundle.message("error_title")
                                                     )
                                                 }
                                             }
@@ -151,7 +151,7 @@ class DeploymentEditorFactory(private val project: Project) {
                             Messages.showErrorDialog(
                                 project,
                                 e.message ?: MyBundle.message("deployment_update_failed"),
-                                MyBundle.message("error")
+                                MyBundle.message("error_title")
                             )
                         }
                     }
@@ -198,9 +198,9 @@ class DeploymentEditorFactory(private val project: Project) {
      * 添加loading过程，因为这是一个耗时操作
      */
     fun openEditor(deploymentDetail: String, basicInfo: Triple<String, String, String>, deploymentName: String) {
-        ProgressManager.getInstance().run(object : Task.Backgroundable(project, "正在打开编辑器...", false) {
+        ProgressManager.getInstance().run(object : Task.Backgroundable(project, MyBundle.message("opening_editor"), false) {
             override fun run(indicator: ProgressIndicator) {
-                indicator.text = "正在准备编辑器..."
+                indicator.text = MyBundle.message("preparing_editor")
                 indicator.fraction = 0.5
 
                 ApplicationManager.getApplication().invokeLater {
