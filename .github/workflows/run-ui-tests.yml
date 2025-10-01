@@ -43,7 +43,7 @@ jobs:
           java-version: 11
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
 
       # Gradle 缓存，避免每次都重新下载 IDEA 安装包
       - name: Gradle cache
